@@ -1,6 +1,6 @@
 # ElctinsIoTClient
 
-Lightweight MQTT 3.1.1 client for ESP8266 and ESP32. Simple, powerful, and more ergonomic than PubSubClient.
+Lightweight MQTT 3.1.1 client for ESP8266 and ESP32. Simple, powerful.
 
 ## Features
 
