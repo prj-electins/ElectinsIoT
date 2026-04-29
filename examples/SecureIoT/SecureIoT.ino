@@ -1,4 +1,4 @@
-#include <ElctinsIoTClient.h>
+#include <ElectinsIoT.h>
 
 #if defined(ESP8266)
   #include <ESP8266WiFi.h>
@@ -10,7 +10,7 @@
   using SecureClient = WiFiClientSecure;
 #endif
 
-// ─── Konfigurasi ──────────────────────────────────────────────────────────────
+// ─── Configuration ────────────────────────────────────────────────────────────
 const char* WIFI_SSID  = "YourSSID";
 const char* WIFI_PASS  = "YourPassword";
 const char* MQTT_HOST  = "broker.example.com";
@@ -18,20 +18,20 @@ const char* MQTT_USER  = "username";
 const char* MQTT_PASS  = "password";
 const uint16_t MQTT_PORT = 8883;
 
-// ─── Topic ────────────────────────────────────────────────────────────────────
+// ─── Topics ───────────────────────────────────────────────────────────────────
 const char* TOPIC_STATUS = "device/status";
 const char* TOPIC_CMD    = "device/cmd";
 const char* TOPIC_TEMP   = "device/temp";
 
 SecureClient secureClient;
-ElctinsIoTClient mqtt(secureClient);
+ElectinsIoT mqtt(secureClient);
 
-// ─── Handler per topic ────────────────────────────────────────────────────────
+// ─── Per-topic handler ────────────────────────────────────────────────────────
 void onCmd(MqttParam& param) {
     Serial.printf("[CMD] %s\n", param.asStr());
 }
 
-// ─── onConnect ────────────────────────────────────────────────────────────────
+// ─── Connect callback ─────────────────────────────────────────────────────────
 void onConnected() {
     Serial.println("[MQTT] Secure connected!");
     mqtt.publish(TOPIC_STATUS, "online", true);
@@ -43,6 +43,7 @@ void onDisconnected() {
     Serial.println("[MQTT] Disconnected!");
 }
 
+// ─── Global fallback — called for every incoming message ─────────────────────
 void onMessage(const char* topic, const uint8_t* payload, uint16_t length) {
     Serial.printf("[MQTT] %s => %.*s\n", topic, length, (char*)payload);
 }
@@ -62,8 +63,8 @@ void reconnectWiFi() {
 void setup() {
     Serial.begin(115200);
 
-    // PENTING: setInsecure() harus dipanggil SEBELUM begin()
-    // agar TLS sudah terkonfigurasi saat koneksi TCP dibuat
+    // IMPORTANT: setInsecure() must be called BEFORE begin()
+    // so TLS is configured before the TCP connection is established
     secureClient.setInsecure();
 
     mqtt.setWill(TOPIC_STATUS, "offline", true);
@@ -81,6 +82,7 @@ void loop() {
 
     mqtt.run();
 
+    // Publish temperature every 10 seconds
     static uint32_t last = 0;
     if (millis() - last >= 10000) {
         last = millis();

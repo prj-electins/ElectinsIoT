@@ -9,6 +9,13 @@
   #include <WiFi.h>
 #endif
 
+// ─── Optional ArduinoJson support ────────────────────────────────────────────
+// Include ArduinoJson BEFORE this library to enable JSON helpers
+#if defined(ARDUINOJSON_VERSION_MAJOR)
+  #define ELECTINS_JSON_ENABLED 1
+  #include <ArduinoJson.h>
+#endif
+
 // ─── MQTT Packet Types ────────────────────────────────────────────────────────
 #define MQTT_CONNECT     0x10
 #define MQTT_CONNACK     0x20
@@ -38,7 +45,7 @@ enum MqttQoS { QOS0 = 0, QOS1 = 1, QOS2 = 2 };
 class MqttParam {
 public:
     MqttParam(const uint8_t* data, uint16_t length) : _data(data), _len(length) {
-        // Null-terminate untuk keamanan asStr()
+        // Null-terminate for safe use of asStr()
         uint16_t copy = length < sizeof(_str) - 1 ? length : sizeof(_str) - 1;
         memcpy(_str, data, copy);
         _str[copy] = '\0';
@@ -56,7 +63,7 @@ public:
 private:
     const uint8_t* _data;
     uint16_t       _len;
-    char           _str[128]; // null-terminated copy untuk asStr()
+    char           _str[128]; // null-terminated copy for asStr()
 };
 
 // ─── Callback types ───────────────────────────────────────────────────────────
@@ -66,20 +73,27 @@ typedef void (*MqttParamCallback)(MqttParam& param);
 typedef void (*MqttConnectCallback)();
 typedef void (*MqttDisconnectCallback)();
 
+#if defined(ELECTINS_JSON_ENABLED)
+typedef void (*MqttJsonCallback)(const char* topic, JsonDocument& doc);
+#endif
+
 // ─── Subscription entry ───────────────────────────────────────────────────────
 struct MqttSubscription {
     char               topic[64];
     MqttTopicCallback  callback;
     MqttParamCallback  paramCallback;
+#if defined(ELECTINS_JSON_ENABLED)
+    MqttJsonCallback   jsonCallback;
+#endif
     uint8_t            qos;
     bool               active;
 };
 
 // ─── Main Class ───────────────────────────────────────────────────────────────
-class ElctinsIoTClient {
+class ElectinsIoT {
 public:
-    ElctinsIoTClient(Client& client);
-    ~ElctinsIoTClient();
+    ElectinsIoT(Client& client);
+    ~ElectinsIoT();
 
     // ── Config ────────────────────────────────────────────────────────────────
     void setServer(const char* host, uint16_t port = 1883);
@@ -96,7 +110,7 @@ public:
     void onDisconnect(MqttDisconnectCallback cb);
     void onMessage(MqttCallback cb);
 
-    // ── One-line begin — panggil SETELAH semua set/on dipanggil ──────────────
+    // ── One-line begin — call AFTER all set/on methods ───────────────────────
     bool begin(const char* ssid, const char* wifiPass,
                const char* host, uint16_t port,
                const char* clientId,
@@ -117,13 +131,49 @@ public:
     bool publish(const char* topic, const uint8_t* payload, uint16_t length, bool retain = false, MqttQoS qos = QOS0);
 
     // Shorthand: mqtt << "topic:payload"
-    ElctinsIoTClient& operator<<(const char* topicPayload);
+    ElectinsIoT& operator<<(const char* topicPayload);
 
     // ── Subscribe ─────────────────────────────────────────────────────────────
     bool subscribe(const char* topic, MqttQoS qos = QOS0);
     bool subscribe(const char* topic, MqttParamCallback cb, MqttQoS qos = QOS0);
     bool subscribe(const char* topic, MqttTopicCallback cb, MqttQoS qos = QOS0);
     bool unsubscribe(const char* topic);
+
+#if defined(ELECTINS_JSON_ENABLED)
+    // ── JSON Publish — inline so ArduinoJson is visible at compile time ───────
+    inline bool publishJson(const char* topic, JsonDocument& doc, bool retain = false, MqttQoS qos = QOS0) {
+        if (!topic) return false;
+        char jsonBuf[512];
+        size_t len = serializeJson(doc, jsonBuf, sizeof(jsonBuf));
+        if (len == 0) return false;
+        return publish(topic, jsonBuf, retain, qos);
+    }
+
+    // ── JSON Subscribe ────────────────────────────────────────────────────────
+    inline bool subscribeJson(const char* topic, MqttJsonCallback cb, MqttQoS qos = QOS0) {
+        if (!topic) return false;
+        for (uint8_t i = 0; i < _subCount; i++) {
+            if (strcmp(_subs[i].topic, topic) == 0) {
+                _subs[i].jsonCallback  = cb;
+                _subs[i].callback      = nullptr;
+                _subs[i].paramCallback = nullptr;
+                _subs[i].qos = qos; _subs[i].active = true;
+                return _sendSubscribe(topic, qos);
+            }
+        }
+        if (_subCount < MQTT_MAX_SUBS) {
+            strncpy(_subs[_subCount].topic, topic, sizeof(_subs[0].topic) - 1);
+            _subs[_subCount].topic[sizeof(_subs[0].topic) - 1] = '\0';
+            _subs[_subCount].callback      = nullptr;
+            _subs[_subCount].paramCallback = nullptr;
+            _subs[_subCount].jsonCallback  = cb;
+            _subs[_subCount].qos           = qos;
+            _subs[_subCount].active        = true;
+            _subCount++;
+        }
+        return _sendSubscribe(topic, qos);
+    }
+#endif
 
     // ── Loop ──────────────────────────────────────────────────────────────────
     void run();    // alias loop()
@@ -173,4 +223,13 @@ private:
     uint16_t _nextPacketId();
     void     _log(const char* msg);
     void     _log(const char* msg, const char* val);
+
+#if defined(ELECTINS_JSON_ENABLED)
+    inline void _dispatchJson(MqttJsonCallback cb, const char* topic, const uint8_t* payload, uint16_t length) {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, payload, length);
+        if (!err) cb(topic, doc);
+        else _log("[JSON] Parse error");
+    }
+#endif
 };

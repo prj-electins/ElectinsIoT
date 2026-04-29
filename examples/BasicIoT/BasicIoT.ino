@@ -1,4 +1,4 @@
-#include <ElctinsIoTClient.h>
+#include <ElectinsIoT.h>
 
 #if defined(ESP8266)
   #include <ESP8266WiFi.h>
@@ -18,7 +18,7 @@ const char* TOPIC_CMD    = "device/cmd";
 const char* TOPIC_TEMP   = "device/temp";
 
 WiFiClient wifiClient;
-ElctinsIoTClient mqtt(wifiClient);
+ElectinsIoT mqtt(wifiClient);
 
 void onCmd(MqttParam& param) {
     Serial.println(param.asStr());

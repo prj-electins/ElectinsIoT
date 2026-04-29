@@ -1,4 +1,4 @@
-#include <ElctinsIoTClient.h>
+#include <ElectinsIoT.h>
 
 #if defined(ESP8266)
   #include <ESP8266WiFi.h>
@@ -6,7 +6,7 @@
   #include <WiFi.h>
 #endif
 
-// ─── Konfigurasi ──────────────────────────────────────────────────────────────
+// ─── Configuration ────────────────────────────────────────────────────────────
 const char* WIFI_SSID  = "YourSSID";
 const char* WIFI_PASS  = "YourPassword";
 const char* MQTT_HOST  = "broker.example.com";
@@ -14,7 +14,7 @@ const char* MQTT_USER  = "username";
 const char* MQTT_PASS  = "password";
 const uint16_t MQTT_PORT = 1883;
 
-// ─── Topic ────────────────────────────────────────────────────────────────────
+// ─── Topics ───────────────────────────────────────────────────────────────────
 const char* TOPIC_STATUS  = "device/status";
 const char* TOPIC_CMD     = "device/cmd";
 const char* TOPIC_CONFIG  = "device/config";
@@ -23,9 +23,9 @@ const char* TOPIC_UPTIME  = "device/uptime";
 const char* TOPIC_ALL     = "device/#";
 
 WiFiClient wifiClient;
-ElctinsIoTClient mqtt(wifiClient);
+ElectinsIoT mqtt(wifiClient);
 
-// ─── Handler per topic ────────────────────────────────────────────────────────
+// ─── Per-topic handlers ───────────────────────────────────────────────────────
 void onCmd(MqttParam& param) {
     Serial.printf("[CMD] %s\n", param.asStr());
     if (strcmp(param.asStr(), "restart") == 0) ESP.restart();
@@ -44,18 +44,18 @@ void onWildcard(MqttParam& param) {
     Serial.printf("[device/#] len=%d\n", param.length());
 }
 
-// ─── onConnect ────────────────────────────────────────────────────────────────
+// ─── Connect callback ─────────────────────────────────────────────────────────
 void onConnected() {
     Serial.println("[MQTT] Connected!");
     mqtt.publish(TOPIC_STATUS, "online", true);
 
-    mqtt.subscribe(TOPIC_CMD,    onCmd,     QOS1);
+    mqtt.subscribe(TOPIC_CMD,    onCmd,      QOS1);
     Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_CMD);
 
-    mqtt.subscribe(TOPIC_CONFIG, onConfig,  QOS2);
+    mqtt.subscribe(TOPIC_CONFIG, onConfig,   QOS2);
     Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_CONFIG);
 
-    mqtt.subscribe(TOPIC_TEMP,   onTemp,    QOS0);
+    mqtt.subscribe(TOPIC_TEMP,   onTemp,     QOS0);
     Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_TEMP);
 
     mqtt.subscribe(TOPIC_ALL,    onWildcard, QOS0);
@@ -66,7 +66,7 @@ void onDisconnected() {
     Serial.println("[MQTT] Disconnected!");
 }
 
-// ─── Global fallback ──────────────────────────────────────────────────────────
+// ─── Global fallback — called for every incoming message ─────────────────────
 void onMessage(const char* topic, const uint8_t* payload, uint16_t length) {
     Serial.printf("[MQTT] %s => %.*s\n", topic, length, (char*)payload);
 }
@@ -102,6 +102,7 @@ void loop() {
 
     mqtt.run();
 
+    // Publish sensor data every 10 seconds
     static uint32_t last = 0;
     if (millis() - last >= 10000) {
         last = millis();

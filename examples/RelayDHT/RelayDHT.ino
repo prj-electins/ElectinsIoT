@@ -1,4 +1,4 @@
-#include <ElctinsIoTClient.h>
+#include <ElectinsIoT.h>
 
 #if defined(ESP8266)
   #include <ESP8266WiFi.h>
@@ -26,7 +26,7 @@ const char* TOPIC_RELAY       = "ID-XXXXXXXX/prj/relay";
 const char* TOPIC_RELAY_STATE = "ID-XXXXXXXX/prj/relay-state";
 
 WiFiClient wifiClient;
-ElctinsIoTClient mqtt(wifiClient);
+ElectinsIoT mqtt(wifiClient);
 
 void onRelay(MqttParam& param) {
     if (param.asBool()) {

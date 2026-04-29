@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Arduino build artifacts
+build/
+*.elf
+*.bin
+*.hex
+*.map
+
+# IDE files
+.vscode/
+*.code-workspace
+
+# Submodules (should not be included in library)
+library-registry/

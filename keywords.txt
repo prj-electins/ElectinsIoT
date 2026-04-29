@@ -1,0 +1,52 @@
+#######################################
+# Syntax Coloring Map for ElectinsIoT
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+ElectinsIoT	KEYWORD1
+MqttParam	KEYWORD1
+MqttQoS	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+connect	KEYWORD2
+disconnect	KEYWORD2
+connected	KEYWORD2
+publish	KEYWORD2
+publishJson	KEYWORD2
+subscribe	KEYWORD2
+subscribeJson	KEYWORD2
+unsubscribe	KEYWORD2
+run	KEYWORD2
+loop	KEYWORD2
+setServer	KEYWORD2
+setCredentials	KEYWORD2
+setClientId	KEYWORD2
+setWill	KEYWORD2
+setKeepAlive	KEYWORD2
+setBufferSize	KEYWORD2
+setDebug	KEYWORD2
+enableReconnect	KEYWORD2
+onConnect	KEYWORD2
+onDisconnect	KEYWORD2
+onMessage	KEYWORD2
+asStr	KEYWORD2
+asInt	KEYWORD2
+asFloat	KEYWORD2
+asBool	KEYWORD2
+length	KEYWORD2
+data	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+QOS0	LITERAL1
+QOS1	LITERAL1
+QOS2	LITERAL1

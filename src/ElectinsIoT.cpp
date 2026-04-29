@@ -1,62 +1,62 @@
-#include "ElctinsIoTClient.h"
+#include "ElectinsIoT.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 // ─── Constructor / Destructor ─────────────────────────────────────────────────
 
-ElctinsIoTClient::ElctinsIoTClient(Client& client) : _client(client) {
+ElectinsIoT::ElectinsIoT(Client& client) : _client(client) {
     _buf = (uint8_t*)malloc(MQTT_BUFFER_SIZE);
     if (!_buf) _bufferSize = 0;
     memset(_subs, 0, sizeof(_subs));
 }
 
-ElctinsIoTClient::~ElctinsIoTClient() {
+ElectinsIoT::~ElectinsIoT() {
     if (_buf) free(_buf);
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-void ElctinsIoTClient::setServer(const char* host, uint16_t port) {
+void ElectinsIoT::setServer(const char* host, uint16_t port) {
     if (!host) return;
     _host = host; _port = port;
 }
 
-void ElctinsIoTClient::setCredentials(const char* user, const char* pass) {
+void ElectinsIoT::setCredentials(const char* user, const char* pass) {
     _user = user; _pass = pass;
 }
 
-void ElctinsIoTClient::setClientId(const char* clientId) { _clientId = clientId; }
-void ElctinsIoTClient::setKeepAlive(uint16_t seconds)    { _keepAlive = seconds > 0 ? seconds : 1; }
-void ElctinsIoTClient::setDebug(bool enable)             { _debug = enable; }
+void ElectinsIoT::setClientId(const char* clientId) { _clientId = clientId; }
+void ElectinsIoT::setKeepAlive(uint16_t seconds)    { _keepAlive = seconds > 0 ? seconds : 1; }
+void ElectinsIoT::setDebug(bool enable)             { _debug = enable; }
 
-void ElctinsIoTClient::setWill(const char* topic, const char* payload, bool retain, MqttQoS qos) {
+void ElectinsIoT::setWill(const char* topic, const char* payload, bool retain, MqttQoS qos) {
     if (!topic || !payload) return;
     _willTopic = topic; _willPayload = payload;
     _willRetain = retain; _willQos = qos;
 }
 
-void ElctinsIoTClient::setBufferSize(uint16_t size) {
+void ElectinsIoT::setBufferSize(uint16_t size) {
     if (size < 64) return; // minimum sensible buffer
     if (_buf) free(_buf);
     _buf = (uint8_t*)malloc(size);
     _bufferSize = _buf ? size : 0;
 }
 
-void ElctinsIoTClient::enableReconnect(bool enable, uint32_t intervalMs) {
+void ElectinsIoT::enableReconnect(bool enable, uint32_t intervalMs) {
     _reconnect = enable;
-    _reconnectInterval = intervalMs < 1000 ? 1000 : intervalMs; // minimum 1 detik
+    _reconnectInterval = intervalMs < 1000 ? 1000 : intervalMs; // minimum 1 second
 }
 
 // ─── Callbacks ────────────────────────────────────────────────────────────────
 
-void ElctinsIoTClient::onConnect(MqttConnectCallback cb)       { _connectCb    = cb; }
-void ElctinsIoTClient::onDisconnect(MqttDisconnectCallback cb) { _disconnectCb = cb; }
-void ElctinsIoTClient::onMessage(MqttCallback cb)              { _globalCb     = cb; }
+void ElectinsIoT::onConnect(MqttConnectCallback cb)       { _connectCb    = cb; }
+void ElectinsIoT::onDisconnect(MqttDisconnectCallback cb) { _disconnectCb = cb; }
+void ElectinsIoT::onMessage(MqttCallback cb)              { _globalCb     = cb; }
 
 // ─── One-line begin ───────────────────────────────────────────────────────────
 
-bool ElctinsIoTClient::begin(const char* ssid, const char* wifiPass,
+bool ElectinsIoT::begin(const char* ssid, const char* wifiPass,
                               const char* host, uint16_t port,
                               const char* clientId,
                               const char* user, const char* mqttPass) {
@@ -79,24 +79,24 @@ bool ElctinsIoTClient::begin(const char* ssid, const char* wifiPass,
 
 // ─── Connect ──────────────────────────────────────────────────────────────────
 
-bool ElctinsIoTClient::connect() {
+bool ElectinsIoT::connect() {
     if (_connected) return true;
     if (!_host)     { _log("[MQTT] No server set"); return false; }
     return _doConnect();
 }
 
-bool ElctinsIoTClient::connect(const char* clientId) {
+bool ElectinsIoT::connect(const char* clientId) {
     if (clientId) _clientId = clientId;
     return connect();
 }
 
-bool ElctinsIoTClient::connect(const char* clientId, const char* user, const char* pass) {
+bool ElectinsIoT::connect(const char* clientId, const char* user, const char* pass) {
     if (clientId) _clientId = clientId;
     _user = user; _pass = pass;
     return connect();
 }
 
-void ElctinsIoTClient::disconnect() {
+void ElectinsIoT::disconnect() {
     if (!_connected) return;
     uint8_t pkt[2] = { MQTT_DISCONNECT, 0x00 };
     _sendPacket(pkt, 2);
@@ -106,7 +106,7 @@ void ElctinsIoTClient::disconnect() {
     if (_disconnectCb) _disconnectCb();
 }
 
-bool ElctinsIoTClient::connected() {
+bool ElectinsIoT::connected() {
     if (_connected && !_client.connected()) {
         _connected = false;
         _log("[MQTT] Connection lost");
@@ -117,33 +117,33 @@ bool ElctinsIoTClient::connected() {
 
 // ─── Publish ──────────────────────────────────────────────────────────────────
 
-bool ElctinsIoTClient::publish(const char* topic, const char* payload, bool retain, MqttQoS qos) {
+bool ElectinsIoT::publish(const char* topic, const char* payload, bool retain, MqttQoS qos) {
     if (!topic || !payload) return false;
     return publish(topic, (const uint8_t*)payload, (uint16_t)strlen(payload), retain, qos);
 }
 
-bool ElctinsIoTClient::publish(const char* topic, int value, bool retain) {
+bool ElectinsIoT::publish(const char* topic, int value, bool retain) {
     char buf[16]; snprintf(buf, sizeof(buf), "%d", value);
     return publish(topic, buf, retain);
 }
 
-bool ElctinsIoTClient::publish(const char* topic, float value, uint8_t decimals, bool retain) {
+bool ElectinsIoT::publish(const char* topic, float value, uint8_t decimals, bool retain) {
     char buf[24]; dtostrf(value, 1, decimals, buf);
     return publish(topic, buf, retain);
 }
 
-bool ElctinsIoTClient::publish(const char* topic, bool value, bool retain) {
+bool ElectinsIoT::publish(const char* topic, bool value, bool retain) {
     return publish(topic, value ? "true" : "false", retain);
 }
 
-bool ElctinsIoTClient::publish(const char* topic, const uint8_t* payload, uint16_t length, bool retain, MqttQoS qos) {
+bool ElectinsIoT::publish(const char* topic, const uint8_t* payload, uint16_t length, bool retain, MqttQoS qos) {
     if (!_connected || !_buf || !topic || !payload) return false;
 
     uint16_t topicLen  = strlen(topic);
     uint32_t remaining = 2 + topicLen + length;
     if (qos > QOS0) remaining += 2;
 
-    // Guard: packet harus muat di buffer (header 1 byte + remaining length max 4 bytes)
+    // Guard: packet must fit in buffer (1 byte header + max 4 bytes remaining length)
     if (remaining + 5 > _bufferSize) {
         _log("[MQTT] Publish: payload too large");
         return false;
@@ -177,7 +177,7 @@ bool ElctinsIoTClient::publish(const char* topic, const uint8_t* payload, uint16
     return true;
 }
 
-ElctinsIoTClient& ElctinsIoTClient::operator<<(const char* topicPayload) {
+ElectinsIoT& ElectinsIoT::operator<<(const char* topicPayload) {
     if (!topicPayload) return *this;
     char tmp[256];
     strncpy(tmp, topicPayload, sizeof(tmp) - 1);
@@ -189,7 +189,7 @@ ElctinsIoTClient& ElctinsIoTClient::operator<<(const char* topicPayload) {
 
 // ─── Subscribe ────────────────────────────────────────────────────────────────
 
-bool ElctinsIoTClient::_sendSubscribe(const char* topic, uint8_t qos) {
+bool ElectinsIoT::_sendSubscribe(const char* topic, uint8_t qos) {
     if (!_connected || !_buf || !topic) return false;
     uint16_t topicLen  = strlen(topic);
     uint32_t remaining = 2 + 2 + topicLen + 1;
@@ -206,7 +206,7 @@ bool ElctinsIoTClient::_sendSubscribe(const char* topic, uint8_t qos) {
     return _sendPacket(_buf, pos);
 }
 
-bool ElctinsIoTClient::subscribe(const char* topic, MqttQoS qos) {
+bool ElectinsIoT::subscribe(const char* topic, MqttQoS qos) {
     if (!topic) return false;
     for (uint8_t i = 0; i < _subCount; i++) {
         if (strcmp(_subs[i].topic, topic) == 0) {
@@ -219,6 +219,9 @@ bool ElctinsIoTClient::subscribe(const char* topic, MqttQoS qos) {
         _subs[_subCount].topic[sizeof(_subs[0].topic) - 1] = '\0';
         _subs[_subCount].callback      = nullptr;
         _subs[_subCount].paramCallback = nullptr;
+#if defined(ELECTINS_JSON_ENABLED)
+        _subs[_subCount].jsonCallback  = nullptr;
+#endif
         _subs[_subCount].qos           = qos;
         _subs[_subCount].active        = true;
         _subCount++;
@@ -226,7 +229,7 @@ bool ElctinsIoTClient::subscribe(const char* topic, MqttQoS qos) {
     return _sendSubscribe(topic, qos);
 }
 
-bool ElctinsIoTClient::subscribe(const char* topic, MqttParamCallback cb, MqttQoS qos) {
+bool ElectinsIoT::subscribe(const char* topic, MqttParamCallback cb, MqttQoS qos) {
     if (!topic) return false;
     for (uint8_t i = 0; i < _subCount; i++) {
         if (strcmp(_subs[i].topic, topic) == 0) {
@@ -240,6 +243,9 @@ bool ElctinsIoTClient::subscribe(const char* topic, MqttParamCallback cb, MqttQo
         _subs[_subCount].topic[sizeof(_subs[0].topic) - 1] = '\0';
         _subs[_subCount].callback      = nullptr;
         _subs[_subCount].paramCallback = cb;
+#if defined(ELECTINS_JSON_ENABLED)
+        _subs[_subCount].jsonCallback  = nullptr;
+#endif
         _subs[_subCount].qos           = qos;
         _subs[_subCount].active        = true;
         _subCount++;
@@ -247,7 +253,7 @@ bool ElctinsIoTClient::subscribe(const char* topic, MqttParamCallback cb, MqttQo
     return _sendSubscribe(topic, qos);
 }
 
-bool ElctinsIoTClient::subscribe(const char* topic, MqttTopicCallback cb, MqttQoS qos) {
+bool ElectinsIoT::subscribe(const char* topic, MqttTopicCallback cb, MqttQoS qos) {
     if (!topic) return false;
     for (uint8_t i = 0; i < _subCount; i++) {
         if (strcmp(_subs[i].topic, topic) == 0) {
@@ -261,6 +267,9 @@ bool ElctinsIoTClient::subscribe(const char* topic, MqttTopicCallback cb, MqttQo
         _subs[_subCount].topic[sizeof(_subs[0].topic) - 1] = '\0';
         _subs[_subCount].callback      = cb;
         _subs[_subCount].paramCallback = nullptr;
+#if defined(ELECTINS_JSON_ENABLED)
+        _subs[_subCount].jsonCallback  = nullptr;
+#endif
         _subs[_subCount].qos           = qos;
         _subs[_subCount].active        = true;
         _subCount++;
@@ -268,7 +277,7 @@ bool ElctinsIoTClient::subscribe(const char* topic, MqttTopicCallback cb, MqttQo
     return _sendSubscribe(topic, qos);
 }
 
-bool ElctinsIoTClient::unsubscribe(const char* topic) {
+bool ElectinsIoT::unsubscribe(const char* topic) {
     if (!topic) return false;
     for (uint8_t i = 0; i < _subCount; i++)
         if (strcmp(_subs[i].topic, topic) == 0) _subs[i].active = false;
@@ -290,9 +299,9 @@ bool ElctinsIoTClient::unsubscribe(const char* topic) {
 
 // ─── Run / Loop ───────────────────────────────────────────────────────────────
 
-void ElctinsIoTClient::run() { loop(); }
+void ElectinsIoT::run() { loop(); }
 
-void ElctinsIoTClient::loop() {
+void ElectinsIoT::loop() {
     uint32_t now = millis();
     if (!connected()) {
         if (_reconnect && (now - _lastReconnectAttempt >= _reconnectInterval)) {
@@ -309,19 +318,19 @@ void ElctinsIoTClient::loop() {
         _lastPing = now;
         _log("[MQTT] Ping");
     }
-    // Proses semua data yang tersedia
+    // Process all available incoming data
     while (_client.available()) _processIncoming();
 }
 
 // ─── Internals ────────────────────────────────────────────────────────────────
 
-bool ElctinsIoTClient::_doConnect() {
+bool ElectinsIoT::_doConnect() {
     if (!_buf)  { _log("[MQTT] No buffer");    return false; }
     if (!_host) { _log("[MQTT] No host set");  return false; }
 
     if (!_client.connect(_host, _port)) { _log("[MQTT] TCP failed"); return false; }
 
-    const char* clientId = (_clientId && strlen(_clientId) > 0) ? _clientId : "ElctinsIoT";
+    const char* clientId = (_clientId && strlen(_clientId) > 0) ? _clientId : "ElectinsIoT";
 
     uint8_t flags = 0x02; // clean session
     if (_user && strlen(_user) > 0) flags |= 0x80;
@@ -333,7 +342,7 @@ bool ElctinsIoTClient::_doConnect() {
     if (_user && strlen(_user) > 0) remaining += 2 + strlen(_user);
     if (_pass && strlen(_pass) > 0) remaining += 2 + strlen(_pass);
 
-    // Guard: CONNECT packet harus muat di buffer
+    // Guard: CONNECT packet must fit in buffer
     if (remaining + 5 > _bufferSize) {
         _client.stop();
         _log("[MQTT] CONNECT packet too large");
@@ -367,18 +376,18 @@ bool ElctinsIoTClient::_doConnect() {
     return true;
 }
 
-void ElctinsIoTClient::_resubscribeAll() {
+void ElectinsIoT::_resubscribeAll() {
     for (uint8_t i = 0; i < _subCount; i++) {
         if (_subs[i].active) _sendSubscribe(_subs[i].topic, _subs[i].qos);
     }
 }
 
-bool ElctinsIoTClient::_sendPacket(uint8_t* data, uint16_t len) {
+bool ElectinsIoT::_sendPacket(uint8_t* data, uint16_t len) {
     if (!data || len == 0) return false;
     return _client.write(data, len) == len;
 }
 
-bool ElctinsIoTClient::_waitFor(uint8_t type, uint32_t timeout) {
+bool ElectinsIoT::_waitFor(uint8_t type, uint32_t timeout) {
     uint32_t start = millis();
     while ((uint32_t)(millis() - start) < timeout) {
         if (_client.available() >= 2) {
@@ -397,7 +406,7 @@ bool ElctinsIoTClient::_waitFor(uint8_t type, uint32_t timeout) {
     return false;
 }
 
-void ElctinsIoTClient::_processIncoming() {
+void ElectinsIoT::_processIncoming() {
     if (!_client.available() || !_buf) return;
     uint8_t hdr = _client.read();
 
@@ -472,7 +481,7 @@ void ElctinsIoTClient::_processIncoming() {
     } else if (hdr == MQTT_PINGRESP) {
         _log("[MQTT] Pong");
     } else {
-        // Drain unknown/unhandled packet dengan timeout guard
+        // Drain unknown/unhandled packet with timeout guard
         for (uint32_t i = 0; i < remaining; i++) {
             uint32_t wait = millis();
             while (!_client.available()) { if (millis() - wait > 2000) return; yield(); }
@@ -481,7 +490,7 @@ void ElctinsIoTClient::_processIncoming() {
     }
 }
 
-void ElctinsIoTClient::_dispatchMessage(const char* topic, const uint8_t* payload, uint16_t length) {
+void ElectinsIoT::_dispatchMessage(const char* topic, const uint8_t* payload, uint16_t length) {
     for (uint8_t i = 0; i < _subCount; i++) {
         if (!_subs[i].active || !_topicMatches(_subs[i].topic, topic)) continue;
         if (_subs[i].paramCallback) {
@@ -490,12 +499,17 @@ void ElctinsIoTClient::_dispatchMessage(const char* topic, const uint8_t* payloa
         } else if (_subs[i].callback) {
             _subs[i].callback(payload, length);
         }
+#if defined(ELECTINS_JSON_ENABLED)
+        else if (_subs[i].jsonCallback) {
+            _dispatchJson(_subs[i].jsonCallback, topic, payload, length);
+        }
+#endif
     }
-    // Global fallback selalu dipanggil
+    // Global fallback is always called
     if (_globalCb) _globalCb(topic, payload, length);
 }
 
-bool ElctinsIoTClient::_topicMatches(const char* filter, const char* topic) {
+bool ElectinsIoT::_topicMatches(const char* filter, const char* topic) {
     if (!filter || !topic) return false;
     const char* f = filter;
     const char* t = topic;
@@ -509,11 +523,11 @@ bool ElctinsIoTClient::_topicMatches(const char* filter, const char* topic) {
         if (*f != *t) return false;
         f++; t++;
     }
-    if (*f == '#') return true;              // filter berakhir dengan '#'
+    if (*f == '#') return true;              // filter ends with '#'
     return (*f == '\0' && *t == '\0');
 }
 
-uint16_t ElctinsIoTClient::_writeString(uint8_t* buf, uint16_t pos, const char* str) {
+uint16_t ElectinsIoT::_writeString(uint8_t* buf, uint16_t pos, const char* str) {
     uint16_t len = strlen(str);
     buf[pos++] = len >> 8;
     buf[pos++] = len & 0xFF;
@@ -521,7 +535,7 @@ uint16_t ElctinsIoTClient::_writeString(uint8_t* buf, uint16_t pos, const char* 
     return pos + len;
 }
 
-uint16_t ElctinsIoTClient::_encodeLength(uint8_t* buf, uint16_t pos, uint32_t len) {
+uint16_t ElectinsIoT::_encodeLength(uint8_t* buf, uint16_t pos, uint32_t len) {
     do {
         uint8_t b = len & 0x7F;
         len >>= 7;
@@ -531,15 +545,15 @@ uint16_t ElctinsIoTClient::_encodeLength(uint8_t* buf, uint16_t pos, uint32_t le
     return pos;
 }
 
-uint16_t ElctinsIoTClient::_nextPacketId() {
+uint16_t ElectinsIoT::_nextPacketId() {
     if (++_packetId == 0) _packetId = 1;
     return _packetId;
 }
 
-void ElctinsIoTClient::_log(const char* msg) {
+void ElectinsIoT::_log(const char* msg) {
     if (_debug) Serial.println(msg);
 }
 
-void ElctinsIoTClient::_log(const char* msg, const char* val) {
+void ElectinsIoT::_log(const char* msg, const char* val) {
     if (_debug) { Serial.print(msg); Serial.println(val); }
 }
