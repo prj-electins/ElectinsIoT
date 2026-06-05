@@ -1,114 +1,110 @@
+/**
+ * AdvancedIoT.ino — ElectinsIoT v2 Advanced Example
+ * ───────────────────────────────────────────────────
+ * Demonstrasi fitur lengkap:
+ *   - Multi-topic subscribe + per-topic callback
+ *   - QoS 0, 1, 2
+ *   - Wildcard subscribe (#)
+ *   - Global fallback onMessage()
+ *   - onDisconnect callback
+ *   - statusTopic() helper
+ *   - Shorthand operator <<
+ *
+ * Dependensi: built-in SDK ESP32/ESP8266
+ */
+
 #include <ElectinsIoT.h>
 
-#if defined(ESP8266)
-  #include <ESP8266WiFi.h>
-#elif defined(ESP32)
-  #include <WiFi.h>
-#endif
+// ─── Konfigurasi ──────────────────────────────────────────────────────────────
+const char*    WIFI_SSID    = "YourSSID";
+const char*    WIFI_PASS    = "YourPassword";
+const char*    MQTT_HOST    = "iot.electins.id";
+const char*    MQTT_USER    = "username";
+const char*    MQTT_PASS    = "password";
+const char*    PROJECT_SLUG = "myproject";
+const uint16_t MQTT_PORT    = 1883;
 
-// ─── Configuration ────────────────────────────────────────────────────────────
-const char* WIFI_SSID  = "YourSSID";
-const char* WIFI_PASS  = "YourPassword";
-const char* MQTT_HOST  = "broker.example.com";
-const char* MQTT_USER  = "username";
-const char* MQTT_PASS  = "password";
-const uint16_t MQTT_PORT = 1883;
+// ─── Topik ────────────────────────────────────────────────────────────────────
+const char* TOPIC_CMD    = "username/myproject/cmd";
+const char* TOPIC_CONFIG = "username/myproject/config";
+const char* TOPIC_TEMP   = "username/myproject/temp";
+const char* TOPIC_UPTIME = "username/myproject/uptime";
+const char* TOPIC_ALL    = "username/myproject/#";
 
-// ─── Topics ───────────────────────────────────────────────────────────────────
-const char* TOPIC_STATUS  = "device/status";
-const char* TOPIC_CMD     = "device/cmd";
-const char* TOPIC_CONFIG  = "device/config";
-const char* TOPIC_TEMP    = "device/temp";
-const char* TOPIC_UPTIME  = "device/uptime";
-const char* TOPIC_ALL     = "device/#";
+ElectinsIoT mqtt;
 
-WiFiClient wifiClient;
-ElectinsIoT mqtt(wifiClient);
+// ─── Per-topic callbacks ──────────────────────────────────────────────────────
 
-// ─── Per-topic handlers ───────────────────────────────────────────────────────
 void onCmd(MqttParam& param) {
     Serial.printf("[CMD] %s\n", param.asStr());
-    if (strcmp(param.asStr(), "restart") == 0) ESP.restart();
-    if (strcmp(param.asStr(), "status")  == 0) mqtt.publish(TOPIC_STATUS, "running");
+    if (strcmp(param.asStr(), "restart") == 0) {
+        Serial.println("[CMD] Restarting...");
+        delay(300);
+        ESP.restart();
+    }
+    if (strcmp(param.asStr(), "status") == 0) {
+        mqtt.publish(TOPIC_UPTIME, (int)(millis() / 1000));
+    }
 }
 
 void onConfig(MqttParam& param) {
-    Serial.printf("[CONFIG] Received %d bytes\n", param.length());
+    Serial.printf("[CONFIG] %zu bytes diterima\n", param.length());
 }
 
-void onTemp(MqttParam& param) {
-    Serial.printf("[TEMP] %.2f\n", param.asFloat());
+void onWildcard(const char* payload, size_t length) {
+    Serial.printf("[device/#] %.*s\n", (int)length, payload);
 }
 
-void onWildcard(MqttParam& param) {
-    Serial.printf("[device/#] len=%d\n", param.length());
-}
+// ─── Connect & Disconnect callbacks ──────────────────────────────────────────
 
-// ─── Connect callback ─────────────────────────────────────────────────────────
-void onConnected() {
-    Serial.println("[MQTT] Connected!");
-    mqtt.publish(TOPIC_STATUS, "online", true);
+void onMqttConnected() {
+    Serial.println("[MQTT] Tersambung ke broker!");
+    Serial.printf("[MQTT] Topik $status: %s\n", mqtt.statusTopic());
 
     mqtt.subscribe(TOPIC_CMD,    onCmd,      QOS1);
-    Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_CMD);
-
-    mqtt.subscribe(TOPIC_CONFIG, onConfig,   QOS2);
-    Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_CONFIG);
-
-    mqtt.subscribe(TOPIC_TEMP,   onTemp,     QOS0);
-    Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_TEMP);
-
+    mqtt.subscribe(TOPIC_CONFIG, onConfig,   QOS1);
     mqtt.subscribe(TOPIC_ALL,    onWildcard, QOS0);
-    Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_ALL);
 }
 
-void onDisconnected() {
-    Serial.println("[MQTT] Disconnected!");
+void onMqttDisconnected() {
+    Serial.println("[MQTT] Terputus — library akan reconnect otomatis.");
 }
 
-// ─── Global fallback — called for every incoming message ─────────────────────
-void onMessage(const char* topic, const uint8_t* payload, uint16_t length) {
-    Serial.printf("[MQTT] %s => %.*s\n", topic, length, (char*)payload);
+// ─── Global fallback ──────────────────────────────────────────────────────────
+
+void onMessage(const char* topic, const char* payload, size_t length) {
+    Serial.printf("[MQTT] %s => %.*s\n", topic, (int)length, payload);
 }
 
-void reconnectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
-    Serial.print("[WiFi] Reconnecting");
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-        delay(500); Serial.print(".");
-    }
-    if (WiFi.status() == WL_CONNECTED) Serial.println(" OK");
-    else Serial.println(" Failed");
-}
+// ─── Setup ────────────────────────────────────────────────────────────────────
 
 void setup() {
     Serial.begin(115200);
+    Serial.println("\n[ElectinsIoT] AdvancedIoT v2");
 
-    mqtt.setWill(TOPIC_STATUS, "offline", true, QOS1);
-    mqtt.setKeepAlive(30);
     mqtt.setDebug(true);
-    mqtt.onConnect(onConnected);
-    mqtt.onDisconnect(onDisconnected);
+    mqtt.setKeepAlive(30);
+    mqtt.onConnect(onMqttConnected);
+    mqtt.onDisconnect(onMqttDisconnected);
     mqtt.onMessage(onMessage);
 
-    mqtt.begin(WIFI_SSID, WIFI_PASS, MQTT_HOST, MQTT_PORT, "DeviceID-Advanced", MQTT_USER, MQTT_PASS);
+    mqtt.begin(
+        WIFI_SSID,   WIFI_PASS,
+        MQTT_HOST,   MQTT_PORT,
+        "DeviceID-Advanced",
+        MQTT_USER,   MQTT_PASS,
+        PROJECT_SLUG
+    );
 }
 
+// ─── Loop ─────────────────────────────────────────────────────────────────────
+
 void loop() {
-    reconnectWiFi();
-    if (WiFi.status() != WL_CONNECTED) return;
-
-    mqtt.run();
-
-    // Publish sensor data every 10 seconds
     static uint32_t last = 0;
     if (millis() - last >= 10000) {
         last = millis();
         mqtt.publish(TOPIC_TEMP,   25.0f + random(0, 50) / 10.0f);
         mqtt.publish(TOPIC_UPTIME, (int)(millis() / 1000));
-        mqtt.publish(TOPIC_STATUS, "running", false, QOS1);
-        mqtt << "device/hello:world";
+        mqtt << "username/myproject/hello:world";
     }
 }

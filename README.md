@@ -7,93 +7,119 @@
 <a name="english"></a>
 ## English
 
-Arduino MQTT 3.1.1 library for ESP8266 and ESP32. Lightweight, no external dependencies, ready to use.
+**v2.0.0** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
+One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
-### Features
+### How It Works
 
-| Feature | Description |
+```
+WiFi event (GOT_IP)    → triggers MQTT connect
+MQTT onConnect         → publish "online" + start heartbeat Ticker
+MQTT onDisconnect      → stop heartbeat + schedule reconnect via Ticker
+Poll Ticker (10ms)     → reads TCP buffer non-blocking — processes packets
+Heartbeat Ticker (30s) → publish "online" (retain=true)
+LWT (broker-side)      → publish "offline" on unexpected disconnect
+```
+
+Everything runs in the background. `void loop()` stays clean.
+
+### No External Dependencies
+
+The library uses only what is already built into the ESP32/ESP8266 SDK:
+
+| Component | Source |
 |---|---|
-| MQTT 3.1.1 | Connect, publish, subscribe, unsubscribe |
-| QoS 0 / 1 / 2 | Full handshake for QoS 2 |
-| Auto-reconnect | Configurable interval |
-| Auto-resubscribe | Automatically resubscribes after reconnect |
-| Last Will & Testament | LWT message on unexpected disconnect |
-| TLS / SSL | `WiFiClientSecure` support (port 8883) |
-| Per-topic callbacks | Separate handler per topic via `MqttParam` |
-| Wildcard topics | `+` (single-level) and `#` (multi-level) |
-| One-line setup | Single `begin()` call for WiFi + MQTT |
-| Debug mode | Internal logs to Serial |
+| MQTT 3.1.1 engine | Built-in (`ElectinsMqtt` — written from scratch) |
+| TCP connection | `WiFiClient` (plain) or `WiFiClientSecure` (TLS) |
+| Background polling | `Ticker` |
+| WiFi management | `WiFi` / `ESP8266WiFi` |
+
+The only optional dependency is **ArduinoJson** — only needed if you use `publishJson()` / `subscribeJson()`.
 
 ### Installation
 
-Copy the `ElectinsIoT` folder into your Arduino `libraries` directory, then restart the IDE.
+1. Copy the `ElectinsIoT` folder into your Arduino `libraries` directory.
+2. Restart the IDE.
+3. Done — no other libraries to install.
 
 ### Quick Start
 
 ```cpp
 #include <ElectinsIoT.h>
 
-WiFiClient wifiClient;
-ElectinsIoT mqtt(wifiClient);
+ElectinsIoT mqtt;
+
+void onCmd(MqttParam& p) {
+    Serial.println(p.asStr());
+}
 
 void onConnected() {
-    mqtt.publish("device/status", "online", true);
-    mqtt.subscribe("device/cmd", [](MqttParam& p) {
-        Serial.println(p.asStr());
-    });
+    mqtt.subscribe("user/proj/cmd", onCmd);
 }
 
 void setup() {
     Serial.begin(115200);
-    mqtt.setWill("device/status", "offline", true);
     mqtt.onConnect(onConnected);
-    mqtt.begin("SSID", "PASSWORD", "broker.example.com", 1883, "DeviceID");
+    mqtt.begin("SSID", "pass", "iot.electins.id", 1883,
+               "DeviceID", "user", "mqttpass", "proj");
 }
 
 void loop() {
-    mqtt.run();
+    // Nothing here — library handles everything
 }
+```
+
+The library automatically:
+- Connects to WiFi and MQTT
+- Sets LWT → `user/proj/$status = "offline"` (retain=true)
+- Publishes `"online"` to `user/proj/$status` on connect (retain=true)
+- Sends heartbeat `"online"` every 30 seconds
+- Reconnects WiFi and MQTT on any disconnect
+- Re-subscribes all topics after reconnect
+
+### `begin()` Parameters
+
+```cpp
+mqtt.begin(
+    ssid,        // WiFi SSID
+    wifiPass,    // WiFi password
+    mqttHost,    // broker hostname or IP
+    mqttPort,    // broker port (1883 plain, 8883 TLS)
+    clientId,    // unique device client ID
+    mqttUser,    // MQTT username  →  also builds $status topic
+    mqttPass,    // MQTT password
+    projectSlug  // project slug   →  $status = <user>/<slug>/$status
+                 // default: "device"
+);
 ```
 
 ### Publish
 
 ```cpp
-mqtt.publish("sensor/temp",    25.4f);               // float
-mqtt.publish("sensor/counter", 100);                 // int
-mqtt.publish("relay/state",    true);                // bool → "true"/"false"
-mqtt.publish("info/msg",       "hello world");       // string
-mqtt.publish("info/msg",       "hello", true, QOS1); // retain + QoS
-mqtt << "info/short:payload";                        // shorthand operator
+mqtt.publish("topic", "string");               // string
+mqtt.publish("topic", 25.4f);                  // float
+mqtt.publish("topic", 100);                    // int
+mqtt.publish("topic", true);                   // bool → "true"/"false"
+mqtt.publish("topic", "msg", true, QOS1);      // retain + QoS1
+mqtt << "topic:payload";                       // shorthand operator
 ```
 
 ### Subscribe
 
 ```cpp
-// Per-topic callback
-mqtt.subscribe("relay/ctrl", [](MqttParam& p) {
-    digitalWrite(PIN_RELAY, p.asBool() ? HIGH : LOW);
-}, QOS1);
+// MqttParam callback — .asStr(), .asInt(), .asFloat(), .asBool()
+mqtt.subscribe("user/proj/cmd", onCmd, QOS1);
 
-// Multi-level wildcard
-mqtt.subscribe("device/#", onAny);
+// Raw string callback
+mqtt.subscribe("user/proj/data", [](const char* p, size_t len) {
+    Serial.printf("%.*s\n", (int)len, p);
+});
 
-// Single-level wildcard
-mqtt.subscribe("sensor/+/temp", onTemp);
+// Wildcard
+mqtt.subscribe("user/proj/#", onAny);   // multi-level
+mqtt.subscribe("sensor/+/temp", onSensor); // single-level
 
-mqtt.unsubscribe("relay/ctrl");
-```
-
-### Configuration
-
-```cpp
-mqtt.setServer("broker.example.com", 1883);
-mqtt.setCredentials("user", "pass");
-mqtt.setClientId("DeviceID");
-mqtt.setWill("device/status", "offline", true, QOS1);
-mqtt.setKeepAlive(30);            // seconds, default 60
-mqtt.setBufferSize(1024);         // bytes, default 512
-mqtt.setDebug(true);              // enable Serial logs
-mqtt.enableReconnect(true, 3000); // enable, interval 3s
+mqtt.unsubscribe("user/proj/cmd");
 ```
 
 ### Callbacks
@@ -101,12 +127,28 @@ mqtt.enableReconnect(true, 3000); // enable, interval 3s
 ```cpp
 mqtt.onConnect([]() { /* called on every connect / reconnect */ });
 mqtt.onDisconnect([]() { /* called on disconnect */ });
-mqtt.onMessage([](const char* topic, const uint8_t* payload, uint16_t len) {
-    // global fallback for all incoming messages
+mqtt.onMessage([](const char* topic, const char* payload, size_t len) {
+    // global fallback — called for all incoming messages
 });
 ```
 
-### MqttParam
+### Configuration (call before begin)
+
+```cpp
+mqtt.setDebug(true);               // Serial debug logs
+mqtt.setKeepAlive(30);             // MQTT keepalive, seconds (default 15)
+mqtt.setReconnectInterval(10);     // reconnect retry interval, seconds (default 5)
+mqtt.setHeartbeatInterval(60);     // heartbeat interval, seconds (default 30)
+```
+
+### Status
+
+```cpp
+mqtt.connected()     // bool — true if MQTT is connected
+mqtt.statusTopic()   // const char* — e.g. "username/myproject/$status"
+```
+
+### MqttParam Helper
 
 ```cpp
 void handler(MqttParam& p) {
@@ -114,158 +156,177 @@ void handler(MqttParam& p) {
     p.asInt();    // int
     p.asFloat();  // float
     p.asBool();   // true if "1", "true", or "on"
-    p.length();   // payload length (uint16_t)
-    p.data();     // raw bytes (const uint8_t*)
+    p.length();   // payload size (size_t)
 }
 ```
-
-### JSON Helper (ArduinoJson)
-
-Install [ArduinoJson](https://arduinojson.org) via Library Manager, then include it **before** ElectinsIoT:
-
-```cpp
-#include <ArduinoJson.h>   // must be first
-#include <ElectinsIoT.h>
-```
-
-**Publish JSON:**
-```cpp
-StaticJsonDocument<128> doc;
-doc["temp"]   = 25.4;
-doc["uptime"] = millis() / 1000;
-doc["status"] = "ok";
-
-mqtt.publishJson("device/sensor", doc);
-mqtt.publishJson("device/sensor", doc, true, QOS1); // retain + QoS
-```
-
-**Subscribe JSON:**
-```cpp
-mqtt.subscribeJson("device/config", [](const char* topic, JsonDocument& doc) {
-    int interval = doc["interval"] | 5000;
-    bool debug   = doc["debug"]    | false;
-    Serial.printf("interval=%d debug=%d\n", interval, debug);
-});
-```
-
----
 
 ### TLS / Secure MQTT (port 8883)
 
 ```cpp
-#include <WiFiClientSecure.h>
+// Call before begin()
+mqtt.setSecure(true);
 
-WiFiClientSecure secureClient;
-ElectinsIoT mqtt(secureClient);
+// Option A: skip certificate verification (development / self-signed broker)
+mqtt.setInsecure(true);
 
-void setup() {
-    secureClient.setInsecure(); // skip certificate verification
-    mqtt.begin(ssid, pass, host, 8883, clientId);
-}
+// Option B: use CA certificate (production)
+mqtt.setInsecure(false);
+// Note: to provide a CA cert, use WiFiClientSecure directly before calling begin()
+
+mqtt.begin(..., 8883, ...);
+```
+
+### JSON Helper (optional — requires ArduinoJson)
+
+Install [ArduinoJson](https://arduinojson.org) via Library Manager, then include it **before** ElectinsIoT:
+
+```cpp
+#include <ArduinoJson.h>   // must come first
+#include <ElectinsIoT.h>
+```
+
+```cpp
+// Publish JSON
+JsonDocument doc;
+doc["temp"] = 25.4;
+doc["uptime"] = millis() / 1000;
+mqtt.publishJson("user/proj/sensor", doc);
+mqtt.publishJson("user/proj/sensor", doc, true, QOS1); // retain + QoS1
+
+// Subscribe JSON — payload auto-parsed into JsonDocument
+mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) {
+    int interval = doc["interval"] | 5000;
+});
 ```
 
 ### Examples
 
 | Example | Description |
 |---|---|
-| `BasicIoT` | Basic connect, publish, subscribe |
-| `AdvancedIoT` | QoS 0/1/2, wildcard, per-topic callbacks, debug |
+| `BasicIoT` | Minimal setup — connect, publish, subscribe |
+| `AdvancedIoT` | QoS 0/1, wildcard, per-topic callbacks, disconnect handler |
 | `SecureIoT` | TLS connection on port 8883 |
 | `JsonIoT` | JSON publish & subscribe with ArduinoJson |
-| `RelayDHT` | Relay control + DHT11 temperature & humidity monitoring |
+| `RelayDHT` | Relay control + DHT11 temperature & humidity |
 
 ---
 
 <a name="indonesia"></a>
 ## Indonesia
 
-Library Arduino MQTT 3.1.1 untuk ESP8266 dan ESP32. Ringan, tanpa dependensi eksternal, siap pakai.
+**v2.0.0** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
+Satu panggilan di `setup()`. Tidak ada apapun di `loop()`. Tidak perlu install library lain.
 
-### Fitur
+### Cara Kerja
 
-| Fitur | Keterangan |
+```
+Event WiFi (GOT_IP)      → memicu koneksi MQTT
+MQTT onConnect           → publish "online" + mulai Ticker heartbeat
+MQTT onDisconnect        → hentikan heartbeat + jadwalkan reconnect via Ticker
+Poll Ticker (10ms)       → baca TCP buffer non-blocking — proses paket
+Heartbeat Ticker (30 dt) → publish "online" (retain=true)
+LWT (sisi broker)        → publish "offline" saat koneksi terputus tiba-tiba
+```
+
+Semua berjalan di background. `void loop()` tetap bersih.
+
+### Tanpa Dependensi Eksternal
+
+Library hanya menggunakan komponen yang sudah ada di SDK ESP32/ESP8266:
+
+| Komponen | Sumber |
 |---|---|
-| MQTT 3.1.1 | Connect, publish, subscribe, unsubscribe |
-| QoS 0 / 1 / 2 | Handshake penuh untuk QoS 2 |
-| Auto-reconnect | Interval dapat dikonfigurasi |
-| Auto-resubscribe | Otomatis subscribe ulang setelah reconnect |
-| Last Will & Testament | Pesan LWT saat koneksi terputus tak terduga |
-| TLS / SSL | Dukungan `WiFiClientSecure` (port 8883) |
-| Per-topic callback | Handler terpisah per topik via `MqttParam` |
-| Wildcard | `+` (single-level) dan `#` (multi-level) |
-| One-line setup | Satu baris `begin()` untuk WiFi + MQTT |
-| Debug mode | Log internal ke Serial |
+| MQTT 3.1.1 engine | Built-in (`ElectinsMqtt` — ditulis dari nol) |
+| Koneksi TCP | `WiFiClient` (plain) atau `WiFiClientSecure` (TLS) |
+| Background polling | `Ticker` |
+| Manajemen WiFi | `WiFi` / `ESP8266WiFi` |
+
+Satu-satunya dependensi opsional adalah **ArduinoJson** — hanya diperlukan jika Anda menggunakan `publishJson()` / `subscribeJson()`.
 
 ### Instalasi
 
-Salin folder `ElectinsIoT` ke direktori `libraries` Arduino, lalu restart IDE.
+1. Salin folder `ElectinsIoT` ke direktori `libraries` Arduino.
+2. Restart IDE.
+3. Selesai — tidak perlu install library lain.
 
 ### Contoh Cepat
 
 ```cpp
 #include <ElectinsIoT.h>
 
-WiFiClient wifiClient;
-ElectinsIoT mqtt(wifiClient);
+ElectinsIoT mqtt;
+
+void onCmd(MqttParam& p) {
+    Serial.println(p.asStr());
+}
 
 void onConnected() {
-    mqtt.publish("perangkat/status", "online", true);
-    mqtt.subscribe("perangkat/perintah", [](MqttParam& p) {
-        Serial.println(p.asStr());
-    });
+    mqtt.subscribe("user/proj/cmd", onCmd);
 }
 
 void setup() {
     Serial.begin(115200);
-    mqtt.setWill("perangkat/status", "offline", true);
     mqtt.onConnect(onConnected);
-    mqtt.begin("SSID", "PASSWORD", "broker.example.com", 1883, "DeviceID");
+    mqtt.begin("SSID", "pass", "iot.electins.id", 1883,
+               "DeviceID", "user", "mqttpass", "proj");
 }
 
 void loop() {
-    mqtt.run();
+    // Kosong — library menangani segalanya
 }
+```
+
+Library secara otomatis:
+- Menghubungkan WiFi dan MQTT
+- Mendaftarkan LWT → `user/proj/$status = "offline"` (retain=true)
+- Mempublish `"online"` ke `user/proj/$status` saat connect (retain=true)
+- Mengirim heartbeat `"online"` setiap 30 detik
+- Reconnect WiFi dan MQTT saat koneksi terputus
+- Re-subscribe semua topik setelah reconnect
+
+### Parameter `begin()`
+
+```cpp
+mqtt.begin(
+    ssid,        // SSID WiFi
+    wifiPass,    // Password WiFi
+    mqttHost,    // Hostname/IP broker
+    mqttPort,    // Port broker (1883 plain, 8883 TLS)
+    clientId,    // Client ID unik perangkat
+    mqttUser,    // Username MQTT → digunakan untuk membangun topik $status
+    mqttPass,    // Password MQTT
+    projectSlug  // Slug project → $status = <user>/<slug>/$status
+                 // default: "device"
+);
 ```
 
 ### Publish
 
 ```cpp
-mqtt.publish("sensor/suhu",    25.4f);                  // float
-mqtt.publish("sensor/counter", 100);                    // int
-mqtt.publish("relay/state",    true);                   // bool → "true"/"false"
-mqtt.publish("info/pesan",     "halo dunia");           // string
-mqtt.publish("info/pesan",     "halo", true, QOS1);     // retain + QoS
-mqtt << "info/singkat:isi pesan";                       // shorthand operator
+mqtt.publish("topik", "string");               // string
+mqtt.publish("topik", 25.4f);                  // float
+mqtt.publish("topik", 100);                    // int
+mqtt.publish("topik", true);                   // bool → "true"/"false"
+mqtt.publish("topik", "pesan", true, QOS1);    // retain + QoS1
+mqtt << "topik:isi";                           // shorthand operator
 ```
 
 ### Subscribe
 
 ```cpp
-// Callback per topik
-mqtt.subscribe("relay/kontrol", [](MqttParam& p) {
-    digitalWrite(PIN_RELAY, p.asBool() ? HIGH : LOW);
-}, QOS1);
+// Callback MqttParam — .asStr(), .asInt(), .asFloat(), .asBool()
+mqtt.subscribe("user/proj/cmd", onCmd, QOS1);
 
-// Wildcard multi-level
-mqtt.subscribe("perangkat/#", onSemua);
+// Callback raw string
+mqtt.subscribe("user/proj/data", [](const char* p, size_t len) {
+    Serial.printf("%.*s\n", (int)len, p);
+});
 
-// Wildcard single-level
-mqtt.subscribe("sensor/+/suhu", onSuhu);
+// Wildcard
+mqtt.subscribe("user/proj/#", onSemua);     // multi-level
+mqtt.subscribe("sensor/+/suhu", onSuhu);   // single-level
 
-mqtt.unsubscribe("relay/kontrol");
-```
-
-### Konfigurasi
-
-```cpp
-mqtt.setServer("broker.example.com", 1883);
-mqtt.setCredentials("user", "pass");
-mqtt.setClientId("DeviceID");
-mqtt.setWill("perangkat/status", "offline", true, QOS1);
-mqtt.setKeepAlive(30);            // detik, default 60
-mqtt.setBufferSize(1024);         // byte, default 512
-mqtt.setDebug(true);              // aktifkan log ke Serial
-mqtt.enableReconnect(true, 3000); // aktifkan, interval 3 detik
+mqtt.unsubscribe("user/proj/cmd");
 ```
 
 ### Callbacks
@@ -273,12 +334,28 @@ mqtt.enableReconnect(true, 3000); // aktifkan, interval 3 detik
 ```cpp
 mqtt.onConnect([]() { /* dipanggil setiap connect/reconnect */ });
 mqtt.onDisconnect([]() { /* dipanggil saat terputus */ });
-mqtt.onMessage([](const char* topic, const uint8_t* payload, uint16_t len) {
-    // fallback global untuk semua pesan masuk
+mqtt.onMessage([](const char* topic, const char* payload, size_t len) {
+    // fallback global — dipanggil untuk semua pesan masuk
 });
 ```
 
-### MqttParam
+### Konfigurasi (panggil sebelum begin)
+
+```cpp
+mqtt.setDebug(true);               // log debug ke Serial
+mqtt.setKeepAlive(30);             // keepalive MQTT, detik (default 15)
+mqtt.setReconnectInterval(10);     // interval reconnect, detik (default 5)
+mqtt.setHeartbeatInterval(60);     // interval heartbeat, detik (default 30)
+```
+
+### Status
+
+```cpp
+mqtt.connected()     // bool — true jika MQTT tersambung
+mqtt.statusTopic()   // const char* — misal "username/myproject/$status"
+```
+
+### MqttParam Helper
 
 ```cpp
 void handler(MqttParam& p) {
@@ -286,12 +363,26 @@ void handler(MqttParam& p) {
     p.asInt();    // int
     p.asFloat();  // float
     p.asBool();   // true jika "1", "true", atau "on"
-    p.length();   // panjang payload (uint16_t)
-    p.data();     // raw bytes (const uint8_t*)
+    p.length();   // ukuran payload (size_t)
 }
 ```
 
-### JSON Helper (ArduinoJson)
+### TLS / Koneksi Aman (port 8883)
+
+```cpp
+// Panggil sebelum begin()
+mqtt.setSecure(true);
+
+// Opsi A: skip verifikasi sertifikat (development / broker self-signed)
+mqtt.setInsecure(true);
+
+// Opsi B: gunakan CA certificate (production)
+mqtt.setInsecure(false);
+
+mqtt.begin(..., 8883, ...);
+```
+
+### JSON Helper (opsional — memerlukan ArduinoJson)
 
 Install [ArduinoJson](https://arduinojson.org) via Library Manager, lalu include **sebelum** ElectinsIoT:
 
@@ -300,52 +391,30 @@ Install [ArduinoJson](https://arduinojson.org) via Library Manager, lalu include
 #include <ElectinsIoT.h>
 ```
 
-**Publish JSON:**
 ```cpp
-StaticJsonDocument<128> doc;
-doc["suhu"]   = 25.4;
+// Publish JSON
+JsonDocument doc;
+doc["suhu"] = 25.4;
 doc["uptime"] = millis() / 1000;
-doc["status"] = "ok";
+mqtt.publishJson("user/proj/sensor", doc);
+mqtt.publishJson("user/proj/sensor", doc, true, QOS1); // retain + QoS1
 
-mqtt.publishJson("perangkat/sensor", doc);
-mqtt.publishJson("perangkat/sensor", doc, true, QOS1); // retain + QoS
-```
-
-**Subscribe JSON:**
-```cpp
-mqtt.subscribeJson("perangkat/config", [](const char* topic, JsonDocument& doc) {
+// Subscribe JSON — payload di-parse otomatis ke JsonDocument
+mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) {
     int interval = doc["interval"] | 5000;
-    bool debug   = doc["debug"]    | false;
-    Serial.printf("interval=%d debug=%d\n", interval, debug);
 });
-```
-
----
-
-### TLS / Koneksi Aman (port 8883)
-
-```cpp
-#include <WiFiClientSecure.h>
-
-WiFiClientSecure secureClient;
-ElectinsIoT mqtt(secureClient);
-
-void setup() {
-    secureClient.setInsecure(); // lewati verifikasi sertifikat
-    mqtt.begin(ssid, pass, host, 8883, clientId);
-}
 ```
 
 ### Daftar Contoh
 
 | Contoh | Deskripsi |
 |---|---|
-| `BasicIoT` | Koneksi dasar, publish, subscribe |
-| `AdvancedIoT` | QoS 0/1/2, wildcard, per-topic callback, debug |
+| `BasicIoT` | Setup minimal — koneksi, publish, subscribe |
+| `AdvancedIoT` | QoS 0/1, wildcard, per-topic callback, handler disconnect |
 | `SecureIoT` | Koneksi TLS pada port 8883 |
 | `JsonIoT` | Publish & subscribe JSON dengan ArduinoJson |
-| `RelayDHT` | Kontrol relay + monitoring suhu & kelembaban DHT11 |
+| `RelayDHT` | Kontrol relay + monitoring DHT11 |
 
 ---
 
-Made with ❤️ by [Nash](mailto:nash@electins.id) — [electins.id](https://electins.id)
+Made with ❤️ by [Nash](mailto:info@electins.id) — [electins.id](https://electins.id)

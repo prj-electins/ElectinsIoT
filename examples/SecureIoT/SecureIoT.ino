@@ -1,88 +1,75 @@
+/**
+ * SecureIoT.ino — ElectinsIoT v2 MQTT over TLS (port 8883)
+ * ──────────────────────────────────────────────────────────
+ * Koneksi MQTT terenkripsi TLS menggunakan WiFiClientSecure
+ * Konfigurasi TLS HARUS dilakukan SEBELUM mqtt.begin().
+ * Dependensi: built-in SDK ESP32/ESP8266
+ */
+
 #include <ElectinsIoT.h>
 
-#if defined(ESP8266)
-  #include <ESP8266WiFi.h>
-  #include <WiFiClientSecureBearSSL.h>
-  using SecureClient = BearSSL::WiFiClientSecure;
-#elif defined(ESP32)
-  #include <WiFi.h>
-  #include <WiFiClientSecure.h>
-  using SecureClient = WiFiClientSecure;
-#endif
+// ─── Konfigurasi ──────────────────────────────────────────────────────────────
+const char*    WIFI_SSID    = "YourSSID";
+const char*    WIFI_PASS    = "YourPassword";
+const char*    MQTT_HOST    = "iot.electins.id";
+const char*    MQTT_USER    = "username";
+const char*    MQTT_PASS    = "password";
+const char*    PROJECT_SLUG = "myproject";
+const uint16_t MQTT_PORT    = 8883;           // Port MQTT over TLS
 
-// ─── Configuration ────────────────────────────────────────────────────────────
-const char* WIFI_SSID  = "YourSSID";
-const char* WIFI_PASS  = "YourPassword";
-const char* MQTT_HOST  = "broker.example.com";
-const char* MQTT_USER  = "username";
-const char* MQTT_PASS  = "password";
-const uint16_t MQTT_PORT = 8883;
+// ─── Topik ────────────────────────────────────────────────────────────────────
+const char* TOPIC_CMD  = "username/myproject/cmd";
+const char* TOPIC_TEMP = "username/myproject/temp";
 
-// ─── Topics ───────────────────────────────────────────────────────────────────
-const char* TOPIC_STATUS = "device/status";
-const char* TOPIC_CMD    = "device/cmd";
-const char* TOPIC_TEMP   = "device/temp";
+ElectinsIoT mqtt;
 
-SecureClient secureClient;
-ElectinsIoT mqtt(secureClient);
-
-// ─── Per-topic handler ────────────────────────────────────────────────────────
+// ─── Callbacks ────────────────────────────────────────────────────────────────
 void onCmd(MqttParam& param) {
     Serial.printf("[CMD] %s\n", param.asStr());
 }
 
-// ─── Connect callback ─────────────────────────────────────────────────────────
-void onConnected() {
-    Serial.println("[MQTT] Secure connected!");
-    mqtt.publish(TOPIC_STATUS, "online", true);
+void onMqttConnected() {
+    Serial.println("[MQTT] Koneksi TLS berhasil!");
+    Serial.printf("[MQTT] Topik $status: %s\n", mqtt.statusTopic());
     mqtt.subscribe(TOPIC_CMD, onCmd, QOS1);
-    Serial.print("[MQTT] Subscribed: "); Serial.println(TOPIC_CMD);
 }
 
-void onDisconnected() {
-    Serial.println("[MQTT] Disconnected!");
+void onMqttDisconnected() {
+    Serial.println("[MQTT] Terputus.");
 }
 
-// ─── Global fallback — called for every incoming message ─────────────────────
-void onMessage(const char* topic, const uint8_t* payload, uint16_t length) {
-    Serial.printf("[MQTT] %s => %.*s\n", topic, length, (char*)payload);
+void onMessage(const char* topic, const char* payload, size_t length) {
+    Serial.printf("[MQTT] %s => %.*s\n", topic, (int)length, payload);
 }
 
-void reconnectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
-    Serial.print("[WiFi] Reconnecting");
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-        delay(500); Serial.print(".");
-    }
-    if (WiFi.status() == WL_CONNECTED) Serial.println(" OK");
-    else Serial.println(" Failed");
-}
-
+// ─── Setup ────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
+    Serial.println("\n[ElectinsIoT] SecureIoT v2");
 
-    // IMPORTANT: setInsecure() must be called BEFORE begin()
-    // so TLS is configured before the TCP connection is established
-    secureClient.setInsecure();
-
-    mqtt.setWill(TOPIC_STATUS, "offline", true);
     mqtt.setDebug(true);
-    mqtt.onConnect(onConnected);
-    mqtt.onDisconnect(onDisconnected);
+    mqtt.onConnect(onMqttConnected);
+    mqtt.onDisconnect(onMqttDisconnected);
     mqtt.onMessage(onMessage);
 
-    mqtt.begin(WIFI_SSID, WIFI_PASS, MQTT_HOST, MQTT_PORT, "DeviceID-Secure", MQTT_USER, MQTT_PASS);
+    // ── Aktifkan TLS — HARUS sebelum begin() ────────────────────────────────
+    mqtt.setSecure(true);
+
+    // Pilih salah satu:
+    // skip verifikasi sertifikat (development / self-signed)
+    mqtt.setInsecure(true);
+
+    mqtt.begin(
+        WIFI_SSID,   WIFI_PASS,
+        MQTT_HOST,   MQTT_PORT,
+        "DeviceID-Secure",
+        MQTT_USER,   MQTT_PASS,
+        PROJECT_SLUG
+    );
 }
 
+// ─── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
-    reconnectWiFi();
-    if (WiFi.status() != WL_CONNECTED) return;
-
-    mqtt.run();
-
-    // Publish temperature every 10 seconds
     static uint32_t last = 0;
     if (millis() - last >= 10000) {
         last = millis();

@@ -1,59 +1,71 @@
+/**
+ * BasicIoT.ino — ElectinsIoT v2 Basic Example
+ * ─────────────────────────────────────────────
+ * Library otomatis menangani di background:
+ *   - Koneksi WiFi & MQTT
+ *   - Heartbeat "online" setiap 30 detik via Ticker
+ *   - Auto-reconnect WiFi & MQTT via event handler
+ *
+ * Dependensi: built-in SDK ESP32/ESP8266
+ */
+
 #include <ElectinsIoT.h>
 
-#if defined(ESP8266)
-  #include <ESP8266WiFi.h>
-#elif defined(ESP32)
-  #include <WiFi.h>
-#endif
-
-const char* WIFI_SSID  = "YourSSID";
-const char* WIFI_PASS  = "YourPassword";
-const char* MQTT_HOST  = "broker.example.com";
-const char* MQTT_USER  = "username";
-const char* MQTT_PASS  = "password";
+// ─── Konfigurasi ──────────────────────────────────────────────────────────────
+const char* WIFI_SSID    = "YourSSID";
+const char* WIFI_PASS    = "YourPassword";
+const char* MQTT_HOST    = "iot.electins.id";
+const char* MQTT_USER    = "username";
+const char* MQTT_PASS    = "password";
+const char* PROJECT_SLUG = "myproject";
 const uint16_t MQTT_PORT = 1883;
 
-const char* TOPIC_STATUS = "device/status";
-const char* TOPIC_CMD    = "device/cmd";
-const char* TOPIC_TEMP   = "device/temp";
+// ─── Topik ────────────────────────────────────────────────────────────────────
+const char* TOPIC_CMD  = "username/myproject/cmd";
+const char* TOPIC_TEMP = "username/myproject/temp";
 
-WiFiClient wifiClient;
-ElectinsIoT mqtt(wifiClient);
+// ─── Instance library ─────────────────────────────────────────────────────────
+ElectinsIoT mqtt;
 
+// ─── Callback perintah masuk ──────────────────────────────────────────────────
 void onCmd(MqttParam& param) {
-    Serial.println(param.asStr());
+    Serial.printf("[CMD] Diterima: %s\n", param.asStr());
 }
 
-void onConnected() {
-    mqtt.publish(TOPIC_STATUS, "online", true);
+// ─── Callback saat MQTT tersambung (atau reconnect) ───────────────────────────
+void onMqttConnected() {
+    // Subscribe di sini — otomatis diulang saat reconnect
     mqtt.subscribe(TOPIC_CMD, onCmd);
+    Serial.println("[MQTT] Tersambung dan siap.");
 }
 
-void reconnectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) return;
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
-        delay(500);
-    }
-}
-
+// ─── Setup ────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    mqtt.setWill(TOPIC_STATUS, "offline", true);
-    mqtt.onConnect(onConnected);
-    mqtt.begin(WIFI_SSID, WIFI_PASS, MQTT_HOST, MQTT_PORT, "DeviceID-01", MQTT_USER, MQTT_PASS);
+    Serial.println("\n[ElectinsIoT] BasicIoT v2");
+
+    mqtt.setDebug(true);
+    mqtt.onConnect(onMqttConnected);
+
+    mqtt.begin(
+        WIFI_SSID,   WIFI_PASS,
+        MQTT_HOST,   MQTT_PORT,
+        "DeviceID-Basic",
+        MQTT_USER,   MQTT_PASS,
+        PROJECT_SLUG
+    );
 }
 
+// ─── Loop  ────────────────────────────────────────────────────────────────────
 void loop() {
-    reconnectWiFi();
-    if (WiFi.status() != WL_CONNECTED) return;
-
-    mqtt.run();
-
+    // Kirim data sensor setiap 10 detik
     static uint32_t last = 0;
     if (millis() - last >= 10000) {
         last = millis();
-        mqtt.publish(TOPIC_TEMP, 25.0f + random(0, 50) / 10.0f);
+        float temp = 25.0f + random(0, 50) / 10.0f;
+        mqtt.publish(TOPIC_TEMP, temp);
+        Serial.printf("[Sensor] Temp: %.1f°C\n", temp);
     }
-}
+
+    // Tambahkan logika Anda di sini
+
