@@ -2,12 +2,12 @@
 
 /*
  * ============================================================================
- * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.0.0)
+ * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.1)
  * ============================================================================
  *
  * Engine  : ElectinsMqtt (MQTT 3.1.1 built-in, tanpa dependensi eksternal)
  * TCP     : WiFiClient / WiFiClientSecure (bawaan ESP32/ESP8266 SDK)
- * Timer   : Ticker (bawaan ESP32/ESP8266 SDK)
+ * Pump    : FreeRTOS task khusus (ESP32) / scheduled function (ESP8266)
  * Target  : ESP32 & ESP8266
  *
  * Developer Experience:
@@ -24,21 +24,29 @@
  *   - Koneksi WiFi + MQTT
  *   - LWT "offline" ke <user>/<slug>/$status (retain=true)
  *   - Publish "online" saat connect (retain=true)
- *   - Heartbeat "online" setiap 30 detik via Ticker
+ *   - Heartbeat "online" berkala (dikelola dari konteks pemilik engine)
  *   - Auto-reconnect WiFi & MQTT
  *   - Re-subscribe semua topik setelah reconnect
  *   - TLS/SSL via WiFiClientSecure (opsional)
+ *
+ * Model eksekusi (anti-race):
+ *   Engine dipompa dari SATU konteks pemilik socket — FreeRTOS task khusus
+ *   di ESP32, scheduled function di ESP8266. publish()/subscribe() dari
+ *   konteks mana pun aman karena hanya menaruh paket ke outbox (mutex),
+ *   tidak menyentuh socket langsung.
  * ============================================================================
  */
 
 #include <Arduino.h>
-#include <Ticker.h>
 #include "ElectinsMqtt.h"
 
 #if defined(ESP32)
   #include <WiFi.h>
+  #include <freertos/FreeRTOS.h>
+  #include <freertos/task.h>
 #elif defined(ESP8266)
   #include <ESP8266WiFi.h>
+  #include <Schedule.h>
 #else
   #error "ElectinsIoT hanya mendukung ESP32 dan ESP8266."
 #endif
@@ -51,13 +59,15 @@
 #endif
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
-#define ELECTINS_VERSION          "2.0.0"
+#define ELECTINS_VERSION          "2.1.1"
 #define ELECTINS_MAX_SUBS         16
 #define ELECTINS_TOPIC_BUF_LEN    128
 #define ELECTINS_STR_BUF_LEN      64
 #define ELECTINS_HEARTBEAT_SEC    30   // interval heartbeat (detik)
 #define ELECTINS_RECONNECT_SEC    5    // interval reconnect (detik)
-#define ELECTINS_POLL_MS          10   // interval poll TCP (ms)
+#define ELECTINS_SERVICE_MS       5    // periode pump engine (ms)
+#define ELECTINS_TASK_STACK       8192 // stack task MQTT (ESP32) — cukup untuk TLS
+#define ELECTINS_TASK_PRIO        1    // prioritas task MQTT (ESP32)
 
 // ─── QoS ─────────────────────────────────────────────────────────────────────
 enum MqttQoS { QOS0 = 0, QOS1 = 1 };
@@ -94,18 +104,38 @@ typedef void (*MqttMessageCallback)(const char* topic, const char* payload,
 typedef void (*MqttTopicCallback)(const char* payload, size_t length);
 typedef void (*MqttParamCallback)(MqttParam& param);
 
+// ── Type-erasure untuk callback JSON ──────────────────────────────────────────
+// Tipe ini SELALU terdefinisi (tidak tergantung ArduinoJson) supaya layout
+// MqttSubscription dan signature method identik di semua translation unit —
+// baik TU library (tanpa ArduinoJson) maupun TU sketsa (dengan ArduinoJson).
+// Semua kode yang menyentuh JsonDocument bersifat header-only (lihat di bawah),
+// jadi hanya dikompilasi di TU pengguna yang memang meng-include ArduinoJson.
+typedef void (*MqttGenericFn)();
+typedef void (*MqttJsonInvoker)(MqttGenericFn userCb, const char* topic,
+                                const char* payload, size_t length);
+
 #if defined(ELECTINS_JSON_ENABLED)
 typedef void (*MqttJsonCallback)(const char* topic, JsonDocument& doc);
+
+// Trampoline header-only — dikompilasi di TU pengguna (punya ArduinoJson).
+// Cast antar function-pointer (well-defined oleh standar selama di-cast balik
+// sebelum dipanggil).
+inline void _electinsJsonTrampoline(MqttGenericFn userCb, const char* topic,
+                                    const char* payload, size_t length) {
+    JsonDocument doc;
+    if (deserializeJson(doc, payload, length)) return; // parse error → abaikan
+    reinterpret_cast<MqttJsonCallback>(userCb)(topic, doc);
+}
 #endif
 
 // ─── Subscription entry ───────────────────────────────────────────────────────
+// Layout stabil di semua TU (tidak ada anggota ber-#if).
 struct MqttSubscription {
     char               topic[ELECTINS_TOPIC_BUF_LEN];
     MqttTopicCallback  rawCallback;
     MqttParamCallback  paramCallback;
-#if defined(ELECTINS_JSON_ENABLED)
-    MqttJsonCallback   jsonCallback;
-#endif
+    MqttGenericFn      jsonUserCb;   // callback JSON pengguna (type-erased)
+    MqttJsonInvoker    jsonInvoke;   // trampoline yang men-deserialize + memanggil
     uint8_t            qos;
     bool               active;
 };
@@ -151,8 +181,13 @@ public:
     bool unsubscribe(const char* topic);
 
 #if defined(ELECTINS_JSON_ENABLED)
+    // Header-only — dikompilasi di TU pengguna (punya ArduinoJson).
     bool subscribeJson(const char* topic, MqttJsonCallback cb,
-                       MqttQoS qos = QOS0);
+                       MqttQoS qos = QOS0) {
+        return _registerSub(topic, nullptr, nullptr,
+                            reinterpret_cast<MqttGenericFn>(cb),
+                            &_electinsJsonTrampoline, qos);
+    }
 #endif
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -167,8 +202,15 @@ public:
     bool publish(const char* topic, bool value,  bool retain = false);
 
 #if defined(ELECTINS_JSON_ENABLED)
+    // Header-only — serialisasi terjadi di TU pengguna (punya ArduinoJson).
     bool publishJson(const char* topic, JsonDocument& doc,
-                     bool retain = false, MqttQoS qos = QOS0);
+                     bool retain = false, MqttQoS qos = QOS0) {
+        if (!topic) return false;
+        char buf[512];
+        size_t len = serializeJson(doc, buf, sizeof(buf));
+        if (len == 0) return false;
+        return publish(topic, buf, retain, qos);
+    }
 #endif
 
     // Shorthand: mqtt << "topik:payload"
@@ -197,25 +239,28 @@ public:
     // STATUS
     // ─────────────────────────────────────────────────────────────────────────
 
-    bool        connected()   const { return _mqttEngine.connected(); }
+    bool        connected()   { return _mqttEngine.connected(); }
     const char* statusTopic() const { return _statusTopic; }
 
 private:
     // ── Engine ────────────────────────────────────────────────────────────────
     ElectinsMqtt  _mqttEngine;
-    Ticker        _pollTicker;       // poll TCP setiap 10ms
-    Ticker        _heartbeatTicker;  // publish "online" setiap N detik
-    Ticker        _reconnectTicker;  // coba reconnect setiap N detik
+
+#if defined(ESP32)
+    TaskHandle_t  _taskHandle = nullptr;   // task pemilik socket
+#elif defined(ESP8266)
+    bool          _serviceScheduled = false;
+#endif
 
     // ── State ─────────────────────────────────────────────────────────────────
     bool     _wifiHandlerSet  = false;
-    bool     _mqttConnecting  = false;
     bool     _debug           = false;
     bool     _secure          = false;
     bool     _insecure        = false; // default false — verifikasi sertifikat AKTIF
     uint16_t _keepAliveSec    = 15;
     uint16_t _reconnectSec    = ELECTINS_RECONNECT_SEC;
     uint16_t _heartbeatSec    = ELECTINS_HEARTBEAT_SEC;
+    uint32_t _lastHeartbeat   = 0;
 
     // ── Buffer string internal ────────────────────────────────────────────────
     char _ssid[ELECTINS_STR_BUF_LEN]          = {0};
@@ -239,8 +284,12 @@ private:
     // ── Internal ──────────────────────────────────────────────────────────────
     void _setupWiFiHandlers();
     void _setupMqttCallbacks();
+    void _startService();
+    void _service();                 // pump engine + housekeeping (1 konteks)
+#if defined(ESP32)
+    static void _taskTrampoline(void* arg);
+#endif
     void _connectToWiFi();
-    void _connectToMqtt();
     void _resubscribeAll();
     void _publishOnline();
     void _onMqttConnected();
@@ -252,17 +301,11 @@ private:
     bool _registerSub(const char* topic,
                       MqttTopicCallback rawCb,
                       MqttParamCallback paramCb,
-#if defined(ELECTINS_JSON_ENABLED)
-                      MqttJsonCallback  jsonCb,
-#endif
+                      MqttGenericFn     jsonUserCb,
+                      MqttJsonInvoker   jsonInvoke,
                       MqttQoS qos);
     void _log(const char* msg) const;
     void _log(const char* msg, const char* val) const;
-
-#if defined(ELECTINS_JSON_ENABLED)
-    void _dispatchJson(MqttJsonCallback cb, const char* topic,
-                       const char* payload, size_t length);
-#endif
 
     static ElectinsIoT* _instance;
 };

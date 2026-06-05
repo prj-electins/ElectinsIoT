@@ -1,5 +1,5 @@
 /**
- * SecureIoT.ino — ElectinsIoT v2 MQTT over TLS (port 8883)
+ * SecureIoT.ino — ElectinsIoT v2.1.1 MQTT over TLS (port 8883)
  * ──────────────────────────────────────────────────────────
  * Koneksi MQTT terenkripsi TLS menggunakan WiFiClientSecure
  * Konfigurasi TLS HARUS dilakukan SEBELUM mqtt.begin().
@@ -9,11 +9,11 @@
 #include <ElectinsIoT.h>
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
-const char*    WIFI_SSID    = "YourSSID";
-const char*    WIFI_PASS    = "YourPassword";
+const char*    WIFI_SSID    = "WIFI_SSID";
+const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "username";
-const char*    MQTT_PASS    = "password";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_PASS    = "PASSWORD";
 const char*    PROJECT_SLUG = "myproject";
 const uint16_t MQTT_PORT    = 8883;           // Port MQTT over TLS
 

@@ -1,5 +1,5 @@
 /**
- * RelayDHT.ino — ElectinsIoT v2 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v2.1.1 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
  * Kontrol relay via MQTT dan kirim data sensor DHT11/DHT22.
  *
@@ -11,12 +11,12 @@
 #include <DHT.h>
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
-const char*    WIFI_SSID    = "YourSSID";
-const char*    WIFI_PASS    = "YourPassword";
+const char*    WIFI_SSID    = "WIFI_SSID";
+const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "ID-XXXXXXXX";
-const char*    MQTT_PASS    = "password";
-const char*    PROJECT_SLUG = "prj";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_PASS    = "PASSWORD";
+const char*    PROJECT_SLUG = "myproject";
 const uint16_t MQTT_PORT    = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
@@ -53,7 +53,12 @@ void setup() {
     digitalWrite(PIN_RELAY, LOW);
     dht.begin();
 
+    // Mengaktifkan log internal bawaan library
+    mqtt.setDebug(true);
+
     mqtt.onConnect(onMqttConnected);
+
+    Serial.printf("\nMenghubungkan ke wifi (%s)...\n", WIFI_SSID);
 
     mqtt.begin(
         WIFI_SSID,   WIFI_PASS,

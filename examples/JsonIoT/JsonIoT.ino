@@ -1,5 +1,5 @@
 /**
- * JsonIoT.ino — ElectinsIoT v2 JSON Helper Example
+ * JsonIoT.ino — ElectinsIoT v2.1.1 JSON Helper Example
  * ──────────────────────────────────────────────────
  * Requires: ArduinoJson by Benoit Blanchon
  *           (install via Library Manager)
@@ -20,11 +20,11 @@
 #include <ElectinsIoT.h>
 
 // ─── Konfigurasi ──────────────────────────────────────────────────────────────
-const char*    WIFI_SSID    = "YourSSID";
-const char*    WIFI_PASS    = "YourPassword";
+const char*    WIFI_SSID    = "WIFI_SSID";
+const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "username";
-const char*    MQTT_PASS    = "password";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_PASS    = "PASSWORD";
 const char*    PROJECT_SLUG = "myproject";
 const uint16_t MQTT_PORT    = 1883;
 

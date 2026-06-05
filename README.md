@@ -7,21 +7,26 @@
 <a name="english"></a>
 ## English
 
-**v2.0.0** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
+**v2.1.1** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
 One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
 ### How It Works
 
 ```
-WiFi event (GOT_IP)    → triggers MQTT connect
-MQTT onConnect         → publish "online" + start heartbeat Ticker
-MQTT onDisconnect      → stop heartbeat + schedule reconnect via Ticker
-Poll Ticker (10ms)     → reads TCP buffer non-blocking — processes packets
-Heartbeat Ticker (30s) → publish "online" (retain=true)
-LWT (broker-side)      → publish "offline" on unexpected disconnect
+WiFi management         → connects WiFi, auto-reconnects on drop
+MQTT engine (1 owner)   → a dedicated FreeRTOS task (ESP32) or scheduled
+                          function (ESP8266) is the ONLY owner of the socket:
+                          connect, read, write, keepalive, reconnect
+Outbox (thread-safe)    → publish()/subscribe() from any context just enqueue
+                          packets — they never touch the socket directly
+MQTT onConnect          → re-subscribe topics + publish "online" (retain=true)
+Heartbeat (30s)         → publish "online" (retain=true) from engine context
+LWT (broker-side)       → broker publishes "offline" on unexpected disconnect
 ```
 
-Everything runs in the background. `void loop()` stays clean.
+The socket is never accessed from timer/ISR or WiFi-event contexts, so there
+are no race conditions behind random reconnect/restart loops. `void loop()`
+stays clean.
 
 ### No External Dependencies
 
@@ -31,7 +36,7 @@ The library uses only what is already built into the ESP32/ESP8266 SDK:
 |---|---|
 | MQTT 3.1.1 engine | Built-in (`ElectinsMqtt` — written from scratch) |
 | TCP connection | `WiFiClient` (plain) or `WiFiClientSecure` (TLS) |
-| Background polling | `Ticker` |
+| Background engine | FreeRTOS task (ESP32) / scheduled function (ESP8266) |
 | WiFi management | `WiFi` / `ESP8266WiFi` |
 
 The only optional dependency is **ArduinoJson** — only needed if you use `publishJson()` / `subscribeJson()`.
@@ -214,21 +219,26 @@ mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) 
 <a name="indonesia"></a>
 ## Indonesia
 
-**v2.0.0** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
+**v2.1.1** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
 Satu panggilan di `setup()`. Tidak ada apapun di `loop()`. Tidak perlu install library lain.
 
 ### Cara Kerja
 
 ```
-Event WiFi (GOT_IP)      → memicu koneksi MQTT
-MQTT onConnect           → publish "online" + mulai Ticker heartbeat
-MQTT onDisconnect        → hentikan heartbeat + jadwalkan reconnect via Ticker
-Poll Ticker (10ms)       → baca TCP buffer non-blocking — proses paket
-Heartbeat Ticker (30 dt) → publish "online" (retain=true)
-LWT (sisi broker)        → publish "offline" saat koneksi terputus tiba-tiba
+Manajemen WiFi          → menghubungkan WiFi, auto-reconnect saat terputus
+Engine MQTT (1 pemilik) → satu FreeRTOS task khusus (ESP32) atau scheduled
+                          function (ESP8266) jadi SATU-SATUNYA pemilik socket:
+                          connect, baca, tulis, keepalive, reconnect
+Outbox (thread-safe)    → publish()/subscribe() dari konteks mana pun hanya
+                          menaruh paket ke antrian — tidak menyentuh socket
+MQTT onConnect          → re-subscribe topik + publish "online" (retain=true)
+Heartbeat (30 dt)       → publish "online" (retain=true) dari konteks engine
+LWT (sisi broker)       → broker publish "offline" saat terputus tiba-tiba
 ```
 
-Semua berjalan di background. `void loop()` tetap bersih.
+Socket tidak pernah diakses dari konteks timer/ISR maupun WiFi-event, sehingga
+tidak ada race condition penyebab loop reconnect/restart acak. `void loop()`
+tetap bersih.
 
 ### Tanpa Dependensi Eksternal
 
@@ -238,7 +248,7 @@ Library hanya menggunakan komponen yang sudah ada di SDK ESP32/ESP8266:
 |---|---|
 | MQTT 3.1.1 engine | Built-in (`ElectinsMqtt` — ditulis dari nol) |
 | Koneksi TCP | `WiFiClient` (plain) atau `WiFiClientSecure` (TLS) |
-| Background polling | `Ticker` |
+| Engine background | FreeRTOS task (ESP32) / scheduled function (ESP8266) |
 | Manajemen WiFi | `WiFi` / `ESP8266WiFi` |
 
 Satu-satunya dependensi opsional adalah **ArduinoJson** — hanya diperlukan jika Anda menggunakan `publishJson()` / `subscribeJson()`.
@@ -417,4 +427,4 @@ mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) 
 
 ---
 
-Made with ❤️ by [Nash](mailto:info@electins.id) — [electins.id](https://electins.id)
+Made with ❤️ by [Nash](mailto:support@electins.id) — [electins.id](https://electins.id)

@@ -1,8 +1,9 @@
 /*
- * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.0.0)
+ * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.1)
  *
- * Menggunakan ElectinsMqtt engine internal.
- * TCP polling via Ticker setiap 10ms — void loop() pengguna tetap kosong.
+ * Menggunakan ElectinsMqtt engine internal (single-owner + outbox).
+ * Engine dipompa dari SATU konteks: FreeRTOS task khusus (ESP32) atau
+ * scheduled function (ESP8266). void loop() pengguna tetap kosong.
  */
 
 #include "ElectinsIoT.h"
@@ -77,9 +78,11 @@ void ElectinsIoT::begin(const char* ssid,     const char* wifiPass,
     }
 
     // Konfigurasi MQTT engine
+    _mqttEngine.begin();   // buat mutex (ESP32) — aman dipanggil berulang
     _mqttEngine.setServer(_mqttHost, _mqttPort);
     _mqttEngine.setClientId(_clientId);
     _mqttEngine.setKeepAlive(_keepAliveSec);
+    _mqttEngine.setReconnectInterval(_reconnectSec);
     _mqttEngine.setSecure(_secure);
     _mqttEngine.setInsecure(_insecure);
 
@@ -91,16 +94,55 @@ void ElectinsIoT::begin(const char* ssid,     const char* wifiPass,
     _mqttEngine.setWill(_statusTopic, "offline", true, 0);
     _log("[Electins] LWT: ", _statusTopic);
 
-    // Mulai polling Ticker (10ms — non-blocking TCP read)
-    // Detach dulu sebelum attach agar tidak double-attach jika begin() dipanggil ulang
-    _pollTicker.detach();
-    _pollTicker.attach_ms(ELECTINS_POLL_MS, []() {
-        if (ElectinsIoT::_instance)
-            ElectinsIoT::_instance->_mqttEngine.poll();
-    });
+    // Jalankan pump engine di satu konteks pemilik:
+    //   ESP32     → FreeRTOS task khusus (stack besar, aman untuk TLS)
+    //   ESP8266   → scheduled function (dijalankan di konteks loop, bukan ISR)
+    _startService();
 
-    // Mulai koneksi WiFi
+    // Mulai koneksi WiFi (engine akan connect MQTT otomatis saat WiFi siap)
     _connectToWiFi();
+}
+
+// ─── Pump engine (single owner) ────────────────────────────────────────────────
+
+void ElectinsIoT::_startService() {
+#if defined(ESP32)
+    if (_taskHandle) return;
+    xTaskCreatePinnedToCore(
+        _taskTrampoline, "electinsMqtt",
+        ELECTINS_TASK_STACK, this, ELECTINS_TASK_PRIO,
+        &_taskHandle, 1 /* core 1 — sama dengan loop() */);
+#elif defined(ESP8266)
+    if (_serviceScheduled) return;
+    _serviceScheduled = true;
+    schedule_recurrent_function_us([]() -> bool {
+        if (ElectinsIoT::_instance) ElectinsIoT::_instance->_service();
+        return true; // tetap terjadwal
+    }, (uint32_t)ELECTINS_SERVICE_MS * 1000UL);
+#endif
+}
+
+#if defined(ESP32)
+void ElectinsIoT::_taskTrampoline(void* arg) {
+    ElectinsIoT* self = static_cast<ElectinsIoT*>(arg);
+    for (;;) {
+        self->_service();
+        vTaskDelay(pdMS_TO_TICKS(ELECTINS_SERVICE_MS));
+    }
+}
+#endif
+
+void ElectinsIoT::_service() {
+    _mqttEngine.loop();
+
+    // Heartbeat "online" — dijalankan di konteks pemilik yang sama (aman)
+    if (_heartbeatSec > 0 && _mqttEngine.connected()) {
+        uint32_t now = millis();
+        if ((uint32_t)(now - _lastHeartbeat) >= (uint32_t)_heartbeatSec * 1000UL) {
+            _lastHeartbeat = now;
+            _publishOnline();
+        }
+    }
 }
 
 // ─── WiFi event handlers ──────────────────────────────────────────────────────
@@ -112,21 +154,14 @@ void ElectinsIoT::_setupWiFiHandlers() {
         if (!self) return;
 
         if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
-            self->_log("[WiFi] Tersambung → ", WiFi.localIP().toString().c_str());
-            self->_connectToMqtt();
+            self->_log("[WiFi] Terhubung ke ip ", WiFi.localIP().toString().c_str());
+            // Tidak perlu trigger MQTT di sini — engine connect otomatis saat
+            // WiFi siap. WiFi-event TIDAK menyentuh socket (cegah race).
         }
         else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-            self->_log("[WiFi] Terputus — jadwalkan reconnect");
-            self->_mqttConnecting = false;
-            self->_heartbeatTicker.detach();
-            self->_reconnectTicker.detach();
-            self->_reconnectTicker.attach(
-                (float)self->_reconnectSec,
-                []() {
-                    if (ElectinsIoT::_instance)
-                        ElectinsIoT::_instance->_connectToWiFi();
-                }
-            );
+            self->_log("[WiFi] Terputus — menunggu auto-reconnect");
+            // Hanya urus WiFi. Engine akan mendeteksi socket mati di loop()-nya.
+            WiFi.reconnect();
         }
     });
 
@@ -135,25 +170,14 @@ void ElectinsIoT::_setupWiFiHandlers() {
         WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP&) {
             ElectinsIoT* self = ElectinsIoT::_instance;
             if (!self) return;
-            self->_log("[WiFi] Tersambung → ", WiFi.localIP().toString().c_str());
-            self->_connectToMqtt();
+            self->_log("[WiFi] Terhubung ke ip ", WiFi.localIP().toString().c_str());
         });
 
     static WiFiEventHandler _evDiscon =
         WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected&) {
             ElectinsIoT* self = ElectinsIoT::_instance;
             if (!self) return;
-            self->_log("[WiFi] Terputus — jadwalkan reconnect");
-            self->_mqttConnecting = false;
-            self->_heartbeatTicker.detach();
-            self->_reconnectTicker.detach();
-            self->_reconnectTicker.attach(
-                (float)self->_reconnectSec,
-                []() {
-                    if (ElectinsIoT::_instance)
-                        ElectinsIoT::_instance->_connectToWiFi();
-                }
-            );
+            self->_log("[WiFi] Terputus — menunggu auto-reconnect");
         });
 #endif
 }
@@ -178,40 +202,19 @@ void ElectinsIoT::_setupMqttCallbacks() {
 }
 
 void ElectinsIoT::_onMqttConnected() {
-    _mqttConnecting = false;
-    _reconnectTicker.detach();
     _log("[MQTT] Tersambung ke broker");
 
     _resubscribeAll();
     _publishOnline();
-
-    _heartbeatTicker.attach(
-        (float)_heartbeatSec,
-        []() {
-            if (ElectinsIoT::_instance)
-                ElectinsIoT::_instance->_publishOnline();
-        }
-    );
+    _lastHeartbeat = millis();   // reset jadwal heartbeat (dikelola _service)
 
     if (_connectCb) _connectCb();
 }
 
 void ElectinsIoT::_onMqttDisconnected() {
-    _mqttConnecting = false;
-    _heartbeatTicker.detach();
-    _log("[MQTT] Terputus — jadwalkan reconnect");
-
-    if (WiFi.isConnected()) {
-        _reconnectTicker.detach();
-        _reconnectTicker.attach(
-            (float)_reconnectSec,
-            []() {
-                if (ElectinsIoT::_instance)
-                    ElectinsIoT::_instance->_connectToMqtt();
-            }
-        );
-    }
-
+    _log("[MQTT] Terputus — engine akan reconnect otomatis");
+    // Tidak ada ticker untuk di-detach. Engine menangani reconnect sendiri
+    // di loop()-nya (dengan backoff _reconnectSec) begitu WiFi tersedia.
     if (_disconnectCb) _disconnectCb();
 }
 
@@ -224,36 +227,15 @@ void ElectinsIoT::_onMqttMessage(const char* topic, const char* payload,
 // ─── WiFi & MQTT connect ──────────────────────────────────────────────────────
 
 void ElectinsIoT::_connectToWiFi() {
-    _reconnectTicker.detach();
-    _log("[WiFi] Menghubungkan ke: ", _ssid);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(_ssid, _wifiPass[0] != '\0' ? _wifiPass : nullptr);
-}
-
-void ElectinsIoT::_connectToMqtt() {
-    if (_mqttEngine.connected() || _mqttConnecting) return;
-    _reconnectTicker.detach();
-    _mqttConnecting = true;
-    _log("[MQTT] Menghubungkan ke broker...");
-
-    // connect() melakukan TCP + MQTT handshake.
-    // Dipanggil dari Ticker callback — blocking singkat (max EMQTT_CONNACK_WAIT ms)
-    // tapi ini hanya terjadi saat (re)connect, bukan setiap poll.
-    bool ok = _mqttEngine.connect();
-    if (!ok) {
-        _mqttConnecting = false;
-        _log("[MQTT] Koneksi gagal — akan dicoba lagi");
-        // Jadwalkan retry
-        _reconnectTicker.detach();
-        _reconnectTicker.attach(
-            (float)_reconnectSec,
-            []() {
-                if (ElectinsIoT::_instance)
-                    ElectinsIoT::_instance->_connectToMqtt();
-            }
-        );
+    // Jika sudah tersambung, engine akan langsung lanjut ke MQTT di loop()-nya.
+    if (WiFi.status() == WL_CONNECTED && WiFi.localIP()[0] != 0) {
+        _log("[WiFi] Terhubung ke ip ", WiFi.localIP().toString().c_str());
+        return;
     }
-    // Jika ok: _onMqttConnected() sudah dipanggil dari dalam engine
+    _log("[WiFi] Menghubungkan ke wifi (SSID): ", _ssid);
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(_ssid, _wifiPass[0] != '\0' ? _wifiPass : nullptr);
 }
 
 // ─── Publish "online" ─────────────────────────────────────────────────────────
@@ -281,9 +263,8 @@ void ElectinsIoT::_resubscribeAll() {
 bool ElectinsIoT::_registerSub(const char* topic,
                                 MqttTopicCallback rawCb,
                                 MqttParamCallback paramCb,
-#if defined(ELECTINS_JSON_ENABLED)
-                                MqttJsonCallback  jsonCb,
-#endif
+                                MqttGenericFn     jsonUserCb,
+                                MqttJsonInvoker   jsonInvoke,
                                 MqttQoS qos) {
     if (!topic) return false;
 
@@ -292,9 +273,8 @@ bool ElectinsIoT::_registerSub(const char* topic,
         if (strcmp(_subs[i].topic, topic) == 0) {
             _subs[i].rawCallback   = rawCb;
             _subs[i].paramCallback = paramCb;
-#if defined(ELECTINS_JSON_ENABLED)
-            _subs[i].jsonCallback  = jsonCb;
-#endif
+            _subs[i].jsonUserCb    = jsonUserCb;
+            _subs[i].jsonInvoke    = jsonInvoke;
             _subs[i].qos    = (uint8_t)qos;
             _subs[i].active = true;
             if (_mqttEngine.connected()) {
@@ -316,9 +296,8 @@ bool ElectinsIoT::_registerSub(const char* topic,
     _subs[idx].topic[sizeof(_subs[0].topic) - 1] = '\0';
     _subs[idx].rawCallback   = rawCb;
     _subs[idx].paramCallback = paramCb;
-#if defined(ELECTINS_JSON_ENABLED)
-    _subs[idx].jsonCallback  = jsonCb;
-#endif
+    _subs[idx].jsonUserCb    = jsonUserCb;
+    _subs[idx].jsonInvoke    = jsonInvoke;
     _subs[idx].qos    = (uint8_t)qos;
     _subs[idx].active = true;
 
@@ -331,35 +310,19 @@ bool ElectinsIoT::_registerSub(const char* topic,
 }
 
 bool ElectinsIoT::subscribe(const char* topic, MqttQoS qos) {
-    return _registerSub(topic, nullptr, nullptr,
-#if defined(ELECTINS_JSON_ENABLED)
-                        nullptr,
-#endif
-                        qos);
+    return _registerSub(topic, nullptr, nullptr, nullptr, nullptr, qos);
 }
 
 bool ElectinsIoT::subscribe(const char* topic, MqttParamCallback cb, MqttQoS qos) {
-    return _registerSub(topic, nullptr, cb,
-#if defined(ELECTINS_JSON_ENABLED)
-                        nullptr,
-#endif
-                        qos);
+    return _registerSub(topic, nullptr, cb, nullptr, nullptr, qos);
 }
 
 bool ElectinsIoT::subscribe(const char* topic, MqttTopicCallback cb, MqttQoS qos) {
-    return _registerSub(topic, cb, nullptr,
-#if defined(ELECTINS_JSON_ENABLED)
-                        nullptr,
-#endif
-                        qos);
+    return _registerSub(topic, cb, nullptr, nullptr, nullptr, qos);
 }
 
-#if defined(ELECTINS_JSON_ENABLED)
-bool ElectinsIoT::subscribeJson(const char* topic, MqttJsonCallback cb,
-                                 MqttQoS qos) {
-    return _registerSub(topic, nullptr, nullptr, cb, qos);
-}
-#endif
+// subscribeJson() & publishJson() bersifat header-only (lihat ElectinsIoT.h)
+// agar kode ArduinoJson hanya dikompilasi di TU pengguna.
 
 bool ElectinsIoT::unsubscribe(const char* topic) {
     if (!topic) return false;
@@ -404,17 +367,6 @@ bool ElectinsIoT::publish(const char* topic, bool value, bool retain) {
     return publish(topic, value ? "true" : "false", retain, QOS0);
 }
 
-#if defined(ELECTINS_JSON_ENABLED)
-bool ElectinsIoT::publishJson(const char* topic, JsonDocument& doc,
-                               bool retain, MqttQoS qos) {
-    if (!topic) return false;
-    char buf[512];
-    size_t len = serializeJson(doc, buf, sizeof(buf));
-    if (len == 0) return false;
-    return publish(topic, buf, retain, qos);
-}
-#endif
-
 ElectinsIoT& ElectinsIoT::operator<<(const char* topicPayload) {
     if (!topicPayload) return *this;
     char tmp[256];
@@ -438,26 +390,14 @@ void ElectinsIoT::_dispatchMessage(const char* topic, const char* payload,
             _subs[i].paramCallback(param);
         } else if (_subs[i].rawCallback) {
             _subs[i].rawCallback(payload, len);
+        } else if (_subs[i].jsonInvoke && _subs[i].jsonUserCb) {
+            // Trampoline (header-only) men-deserialize lalu memanggil callback JSON.
+            _subs[i].jsonInvoke(_subs[i].jsonUserCb, topic, payload, len);
         }
-#if defined(ELECTINS_JSON_ENABLED)
-        else if (_subs[i].jsonCallback) {
-            _dispatchJson(_subs[i].jsonCallback, topic, payload, len);
-        }
-#endif
     }
 
     if (_messageCb) _messageCb(topic, payload, len);
 }
-
-#if defined(ELECTINS_JSON_ENABLED)
-void ElectinsIoT::_dispatchJson(MqttJsonCallback cb, const char* topic,
-                                 const char* payload, size_t length) {
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload, length);
-    if (!err) cb(topic, doc);
-    else _log("[JSON] Parse error: ", topic);
-}
-#endif
 
 // ─── Topic wildcard matching ──────────────────────────────────────────────────
 
