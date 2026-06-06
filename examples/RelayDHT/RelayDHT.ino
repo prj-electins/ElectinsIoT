@@ -14,17 +14,17 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    USER_PREFIX  = "ID-XXXXXXXX"; 
 const char*    PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT    = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_TEMP        = "ID-XXXXXXXX/myproject/temp";
-const char* TOPIC_HUMIDITY    = "ID-XXXXXXXX/myproject/humd";
-const char* TOPIC_RELAY       = "ID-XXXXXXXX/myproject/relay";
-const char* TOPIC_RELAY_STATE = "ID-XXXXXXXX/myproject/relay-state";
+const char* TOPIC_TEMP        = "ID-XXXXXXXX/project-slug/temp";
+const char* TOPIC_HUMIDITY    = "ID-XXXXXXXX/project-slug/humd";
+const char* TOPIC_RELAY       = "ID-XXXXXXXX/project-slug/relay";
+const char* TOPIC_RELAY_STATE = "ID-XXXXXXXX/project-slug/relay-state";
 
 // ─── Hardware ─────────────────────────────────────────────────────────────────
 #define PIN_DHT   5

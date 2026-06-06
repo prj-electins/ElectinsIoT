@@ -12,15 +12,15 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";   
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    USER_PREFIX  = "ID-XXXXXXXX";   
 const char*    PROJECT_SLUG = "project-slug";
-const uint16_t MQTT_PORT    = 8883;           // Port MQTT over TLS
+const uint16_t MQTT_PORT    = 8883; // Port MQTT over TLS
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_CMD  = "ID-XXXXXXXX/myproject/cmd";
-const char* TOPIC_TEMP = "ID-XXXXXXXX/myproject/temp";
+const char* TOPIC_CMD  = "ID-XXXXXXXX/project-slug/cmd";
+const char* TOPIC_TEMP = "ID-XXXXXXXX/project-slug/temp";
 
 ElectinsIoT mqtt;
 

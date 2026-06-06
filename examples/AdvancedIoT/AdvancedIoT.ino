@@ -19,18 +19,18 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    USER_PREFIX  = "ID-XXXXXXXX";
 const char*    PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT    = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_CMD    = "ID-XXXXXXXX/myproject/cmd";
-const char* TOPIC_CONFIG = "ID-XXXXXXXX/myproject/config";
-const char* TOPIC_TEMP   = "ID-XXXXXXXX/myproject/temp";
-const char* TOPIC_UPTIME = "ID-XXXXXXXX/myproject/uptime";
-const char* TOPIC_ALL    = "ID-XXXXXXXX/myproject/#";
+const char* TOPIC_CMD    = "ID-XXXXXXXX/project-slug/cmd";
+const char* TOPIC_CONFIG = "ID-XXXXXXXX/project-slug/config";
+const char* TOPIC_TEMP   = "ID-XXXXXXXX/project-slug/temp";
+const char* TOPIC_UPTIME = "ID-XXXXXXXX/project-slug/uptime";
+const char* TOPIC_ALL    = "ID-XXXXXXXX/project-slug/#";
 
 ElectinsIoT mqtt;
 
