@@ -1,5 +1,5 @@
 /**
- * SecureIoT.ino — ElectinsIoT v2.1.2 MQTT over TLS (port 8883)
+ * SecureIoT.ino — ElectinsIoT v2.1.3 MQTT over TLS (port 8883)
  * ──────────────────────────────────────────────────────────
  * Koneksi MQTT terenkripsi TLS menggunakan WiFiClientSecure
  * Konfigurasi TLS HARUS dilakukan SEBELUM mqtt.begin().
@@ -49,7 +49,6 @@ void setup() {
     Serial.println("\n[ElectinsIoT] SecureIoT v2");
 
     mqtt.setDebug(true);
-    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.onConnect(onMqttConnected);
     mqtt.onDisconnect(onMqttDisconnected);
     mqtt.onMessage(onMessage);
@@ -66,7 +65,7 @@ void setup() {
         MQTT_HOST,   MQTT_PORT,
         "DeviceID-Secure",
         MQTT_USER,   MQTT_PASS,
-        PROJECT_SLUG
+        USER_PREFIX, PROJECT_SLUG
     );
 }
 

@@ -1,5 +1,5 @@
 /**
- * BasicIoT.ino — ElectinsIoT v2.1.2 Basic Example
+ * BasicIoT.ino — ElectinsIoT v2.1.3 Basic Example
  * ─────────────────────────────────────────────
  * Library otomatis menangani di background:
  *   - Koneksi WiFi & MQTT
@@ -46,7 +46,6 @@ void setup() {
     Serial.println("\n[ElectinsIoT] BasicIoT v2");
 
     mqtt.setDebug(true);
-    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.onConnect(onMqttConnected);
 
     mqtt.begin(
@@ -54,7 +53,7 @@ void setup() {
         MQTT_HOST,   MQTT_PORT,
         "DeviceID-Basic",
         MQTT_USER,   MQTT_PASS,
-        PROJECT_SLUG
+        USER_PREFIX, PROJECT_SLUG
     );
 }
 

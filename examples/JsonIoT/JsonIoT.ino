@@ -1,5 +1,5 @@
 /**
- * JsonIoT.ino — ElectinsIoT v2.1.2 JSON Helper Example
+ * JsonIoT.ino — ElectinsIoT v2.1.3 JSON Helper Example
  * ──────────────────────────────────────────────────
  * Requires: ArduinoJson by Benoit Blanchon
  *           (install via Library Manager)
@@ -82,7 +82,6 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n[ElectinsIoT] JsonIoT v2");
 
-    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.onConnect(onMqttConnected);
 
     mqtt.begin(
@@ -90,7 +89,7 @@ void setup() {
         MQTT_HOST,   MQTT_PORT,
         "DeviceID-JSON",
         MQTT_USER,   MQTT_PASS,
-        PROJECT_SLUG
+        USER_PREFIX, PROJECT_SLUG
     );
 }
 

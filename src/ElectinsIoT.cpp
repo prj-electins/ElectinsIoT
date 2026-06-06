@@ -1,5 +1,5 @@
 /*
- * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.2)
+ * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.3)
  *
  * Menggunakan ElectinsMqtt engine internal (single-owner + outbox).
  * Engine dipompa dari SATU konteks: FreeRTOS task khusus (ESP32) atau
@@ -33,6 +33,15 @@ void ElectinsIoT::setUserPrefix(const char* prefix) {
     if (!prefix) { _userPrefix[0] = '\0'; return; }
     strncpy(_userPrefix, prefix, sizeof(_userPrefix) - 1);
     _userPrefix[sizeof(_userPrefix) - 1] = '\0';
+
+    // Rebuild $status topic kalau begin() sudah pernah dipanggil
+    // (urutan panggilan jadi tidak jadi jebakan).
+    if (_projectSlug[0] != '\0' && _userPrefix[0] != '\0') {
+        snprintf(_statusTopic, sizeof(_statusTopic),
+                 "%s/%s/$status", _userPrefix, _projectSlug);
+        _mqttEngine.setWill(_statusTopic, "offline", true, 0);
+        _log("[Electins] Status topic (rebuilt): ", _statusTopic);
+    }
 }
 
 // ─── Callback ────────────────────────────────────────────────────────────────
@@ -47,10 +56,18 @@ void ElectinsIoT::begin(const char* ssid,     const char* wifiPass,
                         const char* mqttHost, uint16_t    mqttPort,
                         const char* clientId,
                         const char* mqttUser, const char* mqttPass,
+                        const char* userPrefix,
                         const char* projectSlug) {
 
     if (!ssid || !mqttHost || !clientId || !mqttUser) {
         _log("[Electins] begin(): parameter wajib tidak boleh null");
+        return;
+    }
+
+    // userPrefix WAJIB. Tanpa ini, topik $status tidak punya bentuk yang benar
+    // di setup multi-tenant (mqttUser = kredensial broker, bukan prefix topik).
+    if (!userPrefix || userPrefix[0] == '\0') {
+        _log("[Electins] begin(): userPrefix wajib diisi (mis. \"ID-XXXXXXXX\")");
         return;
     }
 
@@ -61,22 +78,26 @@ void ElectinsIoT::begin(const char* ssid,     const char* wifiPass,
     strncpy(_clientId, clientId,               sizeof(_clientId) - 1);
     strncpy(_mqttUser, mqttUser,               sizeof(_mqttUser) - 1);
     strncpy(_mqttPass, mqttPass  ? mqttPass  : "", sizeof(_mqttPass) - 1);
-    _ssid[sizeof(_ssid)-1]         = '\0';
-    _wifiPass[sizeof(_wifiPass)-1] = '\0';
-    _mqttHost[sizeof(_mqttHost)-1] = '\0';
-    _clientId[sizeof(_clientId)-1] = '\0';
-    _mqttUser[sizeof(_mqttUser)-1] = '\0';
-    _mqttPass[sizeof(_mqttPass)-1] = '\0';
+    strncpy(_userPrefix, userPrefix,           sizeof(_userPrefix) - 1);
+    strncpy(_projectSlug,
+            (projectSlug && projectSlug[0] != '\0') ? projectSlug : "device",
+            sizeof(_projectSlug) - 1);
+    _ssid[sizeof(_ssid)-1]             = '\0';
+    _wifiPass[sizeof(_wifiPass)-1]     = '\0';
+    _mqttHost[sizeof(_mqttHost)-1]     = '\0';
+    _clientId[sizeof(_clientId)-1]     = '\0';
+    _mqttUser[sizeof(_mqttUser)-1]     = '\0';
+    _mqttPass[sizeof(_mqttPass)-1]     = '\0';
+    _userPrefix[sizeof(_userPrefix)-1] = '\0';
+    _projectSlug[sizeof(_projectSlug)-1] = '\0';
     _mqttPort = mqttPort;
 
     // Bangun topik $status: <userPrefix>/<projectSlug>/$status
-    // Jika userPrefix tidak diset (via setUserPrefix), fallback ke mqttUser
-    // agar tetap kompatibel dengan kode yang sudah ada.
-    const char* prefix = (_userPrefix[0] != '\0') ? _userPrefix : _mqttUser;
+    // Selalu pakai _userPrefix (tidak ada lagi fallback ke mqttUser).
     snprintf(_statusTopic, sizeof(_statusTopic),
              "%s/%s/$status",
-             prefix,
-             (projectSlug && projectSlug[0] != '\0') ? projectSlug : "device");
+             _userPrefix,
+             _projectSlug);
     _log("[Electins] Status topic: ", _statusTopic);
 
     // Setup WiFi event dan MQTT callbacks (sekali saja — cegah double-register)

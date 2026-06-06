@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-**v2.1.2** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
+**v2.1.3** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
 One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
 ### How It Works
@@ -59,14 +59,17 @@ void onCmd(MqttParam& p) {
 }
 
 void onConnected() {
-    mqtt.subscribe("user/proj/cmd", onCmd);
+    mqtt.subscribe("ID-XXXXXXXX/myproject/cmd", onCmd);
 }
 
 void setup() {
     Serial.begin(115200);
     mqtt.onConnect(onConnected);
     mqtt.begin("SSID", "pass", "iot.electins.id", 1883,
-               "DeviceID", "user", "mqttpass", "proj");
+               "DeviceID",
+               "PRJ-XXXXXXXX", "mqttpass",   // broker credentials
+               "ID-XXXXXXXX",                // user prefix (REQUIRED)
+               "myproject");                 // project slug
 }
 
 void loop() {
@@ -76,8 +79,8 @@ void loop() {
 
 The library automatically:
 - Connects to WiFi and MQTT
-- Sets LWT → `user/proj/$status = "offline"` (retain=true)
-- Publishes `"online"` to `user/proj/$status` on connect (retain=true)
+- Sets LWT → `ID-XXXXXXXX/myproject/$status = "offline"` (retain=true)
+- Publishes `"online"` to `ID-XXXXXXXX/myproject/$status` on connect (retain=true)
 - Sends heartbeat `"online"` every 30 seconds
 - Reconnects WiFi and MQTT on any disconnect
 - Re-subscribes all topics after reconnect
@@ -91,10 +94,11 @@ mqtt.begin(
     mqttHost,    // broker hostname or IP
     mqttPort,    // broker port (1883 plain, 8883 TLS)
     clientId,    // unique device client ID
-    mqttUser,    // MQTT username  →  also builds $status topic
+    mqttUser,    // MQTT username (broker auth, e.g. "PRJ-XXXXXXXX")
     mqttPass,    // MQTT password
-    projectSlug  // project slug   →  $status = <user>/<slug>/$status
-                 // default: "device"
+    userPrefix,  // user-owned topic prefix (e.g. "ID-XXXXXXXX") — REQUIRED
+                 // → $status = <userPrefix>/<projectSlug>/$status
+    projectSlug  // project slug (default: "device")
 );
 ```
 
@@ -144,11 +148,6 @@ mqtt.setDebug(true);               // Serial debug logs
 mqtt.setKeepAlive(30);             // MQTT keepalive, seconds (default 15)
 mqtt.setReconnectInterval(10);     // reconnect retry interval, seconds (default 5)
 mqtt.setHeartbeatInterval(60);     // heartbeat interval, seconds (default 30)
-mqtt.setUserPrefix("ID-XXXXXXXX"); // user prefix for $status topic (optional)
-                                   // → <userPrefix>/<projectSlug>/$status
-                                   // useful when broker username (e.g. "PRJ-XXXX")
-                                   // differs from your topic prefix (e.g. "ID-XXXX").
-                                   // If not set, falls back to mqttUser.
 ```
 
 ### Status
@@ -224,7 +223,7 @@ mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) 
 <a name="indonesia"></a>
 ## Indonesia
 
-**v2.1.2** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
+**v2.1.3** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
 Satu panggilan di `setup()`. Tidak ada apapun di `loop()`. Tidak perlu install library lain.
 
 ### Cara Kerja
@@ -276,14 +275,17 @@ void onCmd(MqttParam& p) {
 }
 
 void onConnected() {
-    mqtt.subscribe("user/proj/cmd", onCmd);
+    mqtt.subscribe("ID-XXXXXXXX/myproject/cmd", onCmd);
 }
 
 void setup() {
     Serial.begin(115200);
     mqtt.onConnect(onConnected);
     mqtt.begin("SSID", "pass", "iot.electins.id", 1883,
-               "DeviceID", "user", "mqttpass", "proj");
+               "DeviceID",
+               "PRJ-XXXXXXXX", "mqttpass",   // kredensial broker
+               "ID-XXXXXXXX",                // user prefix (WAJIB)
+               "myproject");                 // slug project
 }
 
 void loop() {
@@ -293,8 +295,8 @@ void loop() {
 
 Library secara otomatis:
 - Menghubungkan WiFi dan MQTT
-- Mendaftarkan LWT → `user/proj/$status = "offline"` (retain=true)
-- Mempublish `"online"` ke `user/proj/$status` saat connect (retain=true)
+- Mendaftarkan LWT → `ID-XXXXXXXX/myproject/$status = "offline"` (retain=true)
+- Mempublish `"online"` ke `ID-XXXXXXXX/myproject/$status` saat connect (retain=true)
 - Mengirim heartbeat `"online"` setiap 30 detik
 - Reconnect WiFi dan MQTT saat koneksi terputus
 - Re-subscribe semua topik setelah reconnect
@@ -308,10 +310,11 @@ mqtt.begin(
     mqttHost,    // Hostname/IP broker
     mqttPort,    // Port broker (1883 plain, 8883 TLS)
     clientId,    // Client ID unik perangkat
-    mqttUser,    // Username MQTT → digunakan untuk membangun topik $status
+    mqttUser,    // Username MQTT (kredensial broker, mis. "PRJ-XXXXXXXX")
     mqttPass,    // Password MQTT
-    projectSlug  // Slug project → $status = <user>/<slug>/$status
-                 // default: "device"
+    userPrefix,  // Prefix topik milik pengguna (mis. "ID-XXXXXXXX") — WAJIB
+                 // → $status = <userPrefix>/<projectSlug>/$status
+    projectSlug  // Slug project (default: "device")
 );
 ```
 
@@ -361,12 +364,6 @@ mqtt.setDebug(true);               // log debug ke Serial
 mqtt.setKeepAlive(30);             // keepalive MQTT, detik (default 15)
 mqtt.setReconnectInterval(10);     // interval reconnect, detik (default 5)
 mqtt.setHeartbeatInterval(60);     // interval heartbeat, detik (default 30)
-mqtt.setUserPrefix("ID-XXXXXXXX"); // prefix pengguna untuk topik $status (opsional)
-                                   // → <userPrefix>/<projectSlug>/$status
-                                   // dipakai saat username broker (mis. "PRJ-XXXX")
-                                   // berbeda dengan prefix topik milik pengguna
-                                   // (mis. "ID-XXXX"). Jika tidak diset, fallback
-                                   // ke mqttUser.
 ```
 
 ### Status

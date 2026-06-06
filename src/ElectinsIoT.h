@@ -2,7 +2,7 @@
 
 /*
  * ============================================================================
- * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.2)
+ * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.3)
  * ============================================================================
  *
  * Engine  : ElectinsMqtt (MQTT 3.1.1 built-in, tanpa dependensi eksternal)
@@ -59,7 +59,7 @@
 #endif
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
-#define ELECTINS_VERSION          "2.1.2"
+#define ELECTINS_VERSION          "2.1.3"
 #define ELECTINS_MAX_SUBS         16
 #define ELECTINS_TOPIC_BUF_LEN    128
 #define ELECTINS_STR_BUF_LEN      64
@@ -155,11 +155,10 @@ public:
     void setReconnectInterval(uint16_t seconds);
     void setHeartbeatInterval(uint16_t seconds);
 
-    // Prefix pengguna untuk topik $status (LWT/online/offline).
-    // Topik dibangun: <userPrefix>/<projectSlug>/$status
-    // Jika tidak diset, fallback ke mqttUser (backward compat).
-    // Berguna saat MQTT username (kredensial broker, mis. "PRJ-XXXX")
-    // berbeda dengan prefix topik milik pengguna (mis. "ID-XXXX").
+    // Override prefix pengguna untuk topik $status (opsional).
+    // Sejak v2.1.3 prefix WAJIB diisi via parameter begin(); setter ini
+    // hanya untuk skenario lanjut (mis. mengganti prefix saat runtime).
+    // Jika dipanggil setelah begin(), $status akan dibangun ulang otomatis.
     void setUserPrefix(const char* prefix);
 
     // Aktifkan TLS/SSL (MQTT over port 8883)
@@ -231,15 +230,20 @@ public:
     //  mqttHost         — hostname / IP broker
     //  mqttPort         — port (1883 plain, 8883 TLS)
     //  clientId         — client ID unik perangkat
-    //  mqttUser         — username MQTT (digunakan untuk topik $status)
+    //  mqttUser         — username MQTT (kredensial autentikasi ke broker)
     //  mqttPass         — password MQTT
+    //  userPrefix       — prefix topik milik pengguna (mis. "ID-XXXXXXXX")
+    //                     dipakai untuk topik $status: <userPrefix>/<projectSlug>/$status
+    //                     PARAMETER WAJIB — tidak boleh kosong/nullptr.
+    //                     Di setup multi-tenant, ini biasanya berbeda dengan mqttUser
+    //                     (yang berisi kredensial broker mis. "PRJ-XXXXXXXX").
     //  projectSlug      — slug project (default "device")
-    //                     topik $status = <mqttUser>/<projectSlug>/$status
     //
     void begin(const char* ssid,     const char* wifiPass,
                const char* mqttHost, uint16_t    mqttPort,
                const char* clientId,
                const char* mqttUser, const char* mqttPass,
+               const char* userPrefix,
                const char* projectSlug = "device");
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -277,6 +281,7 @@ private:
     char _mqttUser[ELECTINS_STR_BUF_LEN]      = {0};
     char _mqttPass[ELECTINS_STR_BUF_LEN]      = {0};
     char _userPrefix[ELECTINS_STR_BUF_LEN]    = {0};  // prefix topik $status (opsional)
+    char _projectSlug[ELECTINS_STR_BUF_LEN]   = {0};  // slug project (disimpan untuk rebuild $status)
     char _statusTopic[ELECTINS_TOPIC_BUF_LEN] = {0};
     uint16_t _mqttPort = 1883;
 

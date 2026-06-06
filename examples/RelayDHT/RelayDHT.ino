@@ -1,5 +1,5 @@
 /**
- * RelayDHT.ino — ElectinsIoT v2.1.2 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v2.1.3 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
  * Kontrol relay via MQTT dan kirim data sensor DHT11/DHT22.
  *
@@ -56,7 +56,6 @@ void setup() {
 
     // Mengaktifkan log internal bawaan library
     mqtt.setDebug(true);
-    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
 
     mqtt.onConnect(onMqttConnected);
 
@@ -65,9 +64,9 @@ void setup() {
     mqtt.begin(
         WIFI_SSID,   WIFI_PASS,
         MQTT_HOST,   MQTT_PORT,
-        "ID-XXXXXXXX",
+        "DeviceID-Relay",
         MQTT_USER,   MQTT_PASS,
-        PROJECT_SLUG
+        USER_PREFIX, PROJECT_SLUG
     );
 }
 

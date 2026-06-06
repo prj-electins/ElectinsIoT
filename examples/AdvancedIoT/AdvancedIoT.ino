@@ -1,5 +1,5 @@
 /**
- * AdvancedIoT.ino — ElectinsIoT v2.1.2 Advanced Example
+ * AdvancedIoT.ino — ElectinsIoT v2.1.3 Advanced Example
  * ───────────────────────────────────────────────────
  * Demonstrasi fitur lengkap:
  *   - Multi-topic subscribe + per-topic callback
@@ -84,7 +84,6 @@ void setup() {
     Serial.println("\n[ElectinsIoT] AdvancedIoT v2");
 
     mqtt.setDebug(true);
-    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.setKeepAlive(30);
     mqtt.onConnect(onMqttConnected);
     mqtt.onDisconnect(onMqttDisconnected);
@@ -95,7 +94,7 @@ void setup() {
         MQTT_HOST,   MQTT_PORT,
         "DeviceID-Advanced",
         MQTT_USER,   MQTT_PASS,
-        PROJECT_SLUG
+        USER_PREFIX, PROJECT_SLUG
     );
 }
 
