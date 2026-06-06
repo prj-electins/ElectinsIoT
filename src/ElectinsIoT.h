@@ -2,7 +2,7 @@
 
 /*
  * ============================================================================
- * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.1)
+ * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.2)
  * ============================================================================
  *
  * Engine  : ElectinsMqtt (MQTT 3.1.1 built-in, tanpa dependensi eksternal)
@@ -59,7 +59,7 @@
 #endif
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
-#define ELECTINS_VERSION          "2.1.1"
+#define ELECTINS_VERSION          "2.1.2"
 #define ELECTINS_MAX_SUBS         16
 #define ELECTINS_TOPIC_BUF_LEN    128
 #define ELECTINS_STR_BUF_LEN      64
@@ -154,6 +154,13 @@ public:
     void setKeepAlive(uint16_t seconds);
     void setReconnectInterval(uint16_t seconds);
     void setHeartbeatInterval(uint16_t seconds);
+
+    // Prefix pengguna untuk topik $status (LWT/online/offline).
+    // Topik dibangun: <userPrefix>/<projectSlug>/$status
+    // Jika tidak diset, fallback ke mqttUser (backward compat).
+    // Berguna saat MQTT username (kredensial broker, mis. "PRJ-XXXX")
+    // berbeda dengan prefix topik milik pengguna (mis. "ID-XXXX").
+    void setUserPrefix(const char* prefix);
 
     // Aktifkan TLS/SSL (MQTT over port 8883)
     // Panggil sebelum begin()
@@ -269,6 +276,7 @@ private:
     char _clientId[ELECTINS_STR_BUF_LEN]      = {0};
     char _mqttUser[ELECTINS_STR_BUF_LEN]      = {0};
     char _mqttPass[ELECTINS_STR_BUF_LEN]      = {0};
+    char _userPrefix[ELECTINS_STR_BUF_LEN]    = {0};  // prefix topik $status (opsional)
     char _statusTopic[ELECTINS_TOPIC_BUF_LEN] = {0};
     uint16_t _mqttPort = 1883;
 

@@ -1,5 +1,5 @@
 /**
- * RelayDHT.ino — ElectinsIoT v2.1.1 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v2.1.2 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
  * Kontrol relay via MQTT dan kirim data sensor DHT11/DHT22.
  *
@@ -14,16 +14,17 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    PROJECT_SLUG = "myproject";
+const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT    = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_TEMP        = "ID-XXXXXXXX/prj/temp";
-const char* TOPIC_HUMIDITY    = "ID-XXXXXXXX/prj/humd";
-const char* TOPIC_RELAY       = "ID-XXXXXXXX/prj/relay";
-const char* TOPIC_RELAY_STATE = "ID-XXXXXXXX/prj/relay-state";
+const char* TOPIC_TEMP        = "ID-XXXXXXXX/myproject/temp";
+const char* TOPIC_HUMIDITY    = "ID-XXXXXXXX/myproject/humd";
+const char* TOPIC_RELAY       = "ID-XXXXXXXX/myproject/relay";
+const char* TOPIC_RELAY_STATE = "ID-XXXXXXXX/myproject/relay-state";
 
 // ─── Hardware ─────────────────────────────────────────────────────────────────
 #define PIN_DHT   5
@@ -55,6 +56,7 @@ void setup() {
 
     // Mengaktifkan log internal bawaan library
     mqtt.setDebug(true);
+    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
 
     mqtt.onConnect(onMqttConnected);
 

@@ -1,5 +1,5 @@
 /*
- * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.1)
+ * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.2)
  *
  * Menggunakan ElectinsMqtt engine internal (single-owner + outbox).
  * Engine dipompa dari SATU konteks: FreeRTOS task khusus (ESP32) atau
@@ -28,6 +28,12 @@ void ElectinsIoT::setReconnectInterval(uint16_t s) { _reconnectSec = s > 0 ? s :
 void ElectinsIoT::setHeartbeatInterval(uint16_t s) { _heartbeatSec = s > 0 ? s : 30; }
 void ElectinsIoT::setSecure(bool e)            { _secure    = e; }
 void ElectinsIoT::setInsecure(bool i)          { _insecure  = i; }
+
+void ElectinsIoT::setUserPrefix(const char* prefix) {
+    if (!prefix) { _userPrefix[0] = '\0'; return; }
+    strncpy(_userPrefix, prefix, sizeof(_userPrefix) - 1);
+    _userPrefix[sizeof(_userPrefix) - 1] = '\0';
+}
 
 // ─── Callback ────────────────────────────────────────────────────────────────
 
@@ -63,10 +69,13 @@ void ElectinsIoT::begin(const char* ssid,     const char* wifiPass,
     _mqttPass[sizeof(_mqttPass)-1] = '\0';
     _mqttPort = mqttPort;
 
-    // Bangun topik $status
+    // Bangun topik $status: <userPrefix>/<projectSlug>/$status
+    // Jika userPrefix tidak diset (via setUserPrefix), fallback ke mqttUser
+    // agar tetap kompatibel dengan kode yang sudah ada.
+    const char* prefix = (_userPrefix[0] != '\0') ? _userPrefix : _mqttUser;
     snprintf(_statusTopic, sizeof(_statusTopic),
              "%s/%s/$status",
-             _mqttUser,
+             prefix,
              (projectSlug && projectSlug[0] != '\0') ? projectSlug : "device");
     _log("[Electins] Status topic: ", _statusTopic);
 

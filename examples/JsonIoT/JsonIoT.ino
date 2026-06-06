@@ -1,5 +1,5 @@
 /**
- * JsonIoT.ino — ElectinsIoT v2.1.1 JSON Helper Example
+ * JsonIoT.ino — ElectinsIoT v2.1.2 JSON Helper Example
  * ──────────────────────────────────────────────────
  * Requires: ArduinoJson by Benoit Blanchon
  *           (install via Library Manager)
@@ -23,15 +23,16 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    PROJECT_SLUG = "myproject";
+const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT    = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_SENSOR  = "username/myproject/sensor";
-const char* TOPIC_CONFIG  = "username/myproject/config";
-const char* TOPIC_COMMAND = "username/myproject/command";
+const char* TOPIC_SENSOR  = "ID-XXXXXXXX/myproject/sensor";
+const char* TOPIC_CONFIG  = "ID-XXXXXXXX/myproject/config";
+const char* TOPIC_COMMAND = "ID-XXXXXXXX/myproject/command";
 
 ElectinsIoT mqtt;
 
@@ -81,6 +82,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("\n[ElectinsIoT] JsonIoT v2");
 
+    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.onConnect(onMqttConnected);
 
     mqtt.begin(

@@ -29,6 +29,7 @@ setDebug	KEYWORD2
 setKeepAlive	KEYWORD2
 setReconnectInterval	KEYWORD2
 setHeartbeatInterval	KEYWORD2
+setUserPrefix	KEYWORD2
 asStr	KEYWORD2
 asInt	KEYWORD2
 asFloat	KEYWORD2

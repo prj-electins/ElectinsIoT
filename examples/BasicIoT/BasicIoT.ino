@@ -1,5 +1,5 @@
 /**
- * BasicIoT.ino — ElectinsIoT v2.1.1 Basic Example
+ * BasicIoT.ino — ElectinsIoT v2.1.2 Basic Example
  * ─────────────────────────────────────────────
  * Library otomatis menangani di background:
  *   - Koneksi WiFi & MQTT
@@ -15,14 +15,15 @@
 const char* WIFI_SSID    = "WIFI_SSID";
 const char* WIFI_PASS    = "WIFI_PASSWORD";
 const char* MQTT_HOST    = "iot.electins.id";
-const char* MQTT_USER    = "PRJ-XXXXXXXX";
+const char* MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
 const char* MQTT_PASS    = "PASSWORD";
-const char* PROJECT_SLUG = "myproject";
+const char* USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char* PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_CMD  = "username/myproject/cmd";
-const char* TOPIC_TEMP = "username/myproject/temp";
+const char* TOPIC_CMD  = "ID-XXXXXXXX/myproject/cmd";
+const char* TOPIC_TEMP = "ID-XXXXXXXX/myproject/temp";
 
 // ─── Instance library ─────────────────────────────────────────────────────────
 ElectinsIoT mqtt;
@@ -45,6 +46,7 @@ void setup() {
     Serial.println("\n[ElectinsIoT] BasicIoT v2");
 
     mqtt.setDebug(true);
+    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.onConnect(onMqttConnected);
 
     mqtt.begin(

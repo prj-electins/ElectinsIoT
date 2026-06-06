@@ -1,5 +1,5 @@
 /**
- * AdvancedIoT.ino — ElectinsIoT v2.1.1 Advanced Example
+ * AdvancedIoT.ino — ElectinsIoT v2.1.2 Advanced Example
  * ───────────────────────────────────────────────────
  * Demonstrasi fitur lengkap:
  *   - Multi-topic subscribe + per-topic callback
@@ -19,17 +19,18 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    PROJECT_SLUG = "myproject";
+const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT    = 1883;
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_CMD    = "username/myproject/cmd";
-const char* TOPIC_CONFIG = "username/myproject/config";
-const char* TOPIC_TEMP   = "username/myproject/temp";
-const char* TOPIC_UPTIME = "username/myproject/uptime";
-const char* TOPIC_ALL    = "username/myproject/#";
+const char* TOPIC_CMD    = "ID-XXXXXXXX/myproject/cmd";
+const char* TOPIC_CONFIG = "ID-XXXXXXXX/myproject/config";
+const char* TOPIC_TEMP   = "ID-XXXXXXXX/myproject/temp";
+const char* TOPIC_UPTIME = "ID-XXXXXXXX/myproject/uptime";
+const char* TOPIC_ALL    = "ID-XXXXXXXX/myproject/#";
 
 ElectinsIoT mqtt;
 
@@ -83,6 +84,7 @@ void setup() {
     Serial.println("\n[ElectinsIoT] AdvancedIoT v2");
 
     mqtt.setDebug(true);
+    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.setKeepAlive(30);
     mqtt.onConnect(onMqttConnected);
     mqtt.onDisconnect(onMqttDisconnected);

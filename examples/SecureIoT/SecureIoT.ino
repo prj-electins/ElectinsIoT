@@ -1,5 +1,5 @@
 /**
- * SecureIoT.ino — ElectinsIoT v2.1.1 MQTT over TLS (port 8883)
+ * SecureIoT.ino — ElectinsIoT v2.1.2 MQTT over TLS (port 8883)
  * ──────────────────────────────────────────────────────────
  * Koneksi MQTT terenkripsi TLS menggunakan WiFiClientSecure
  * Konfigurasi TLS HARUS dilakukan SEBELUM mqtt.begin().
@@ -12,14 +12,15 @@
 const char*    WIFI_SSID    = "WIFI_SSID";
 const char*    WIFI_PASS    = "WIFI_PASSWORD";
 const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";
+const char*    MQTT_USER    = "PRJ-XXXXXXXX";   // kredensial broker (project)
 const char*    MQTT_PASS    = "PASSWORD";
-const char*    PROJECT_SLUG = "myproject";
+const char*    USER_PREFIX  = "ID-XXXXXXXX";    // prefix topik milik pengguna
+const char*    PROJECT_SLUG = "project-slug";
 const uint16_t MQTT_PORT    = 8883;           // Port MQTT over TLS
 
 // ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_CMD  = "username/myproject/cmd";
-const char* TOPIC_TEMP = "username/myproject/temp";
+const char* TOPIC_CMD  = "ID-XXXXXXXX/myproject/cmd";
+const char* TOPIC_TEMP = "ID-XXXXXXXX/myproject/temp";
 
 ElectinsIoT mqtt;
 
@@ -48,6 +49,7 @@ void setup() {
     Serial.println("\n[ElectinsIoT] SecureIoT v2");
 
     mqtt.setDebug(true);
+    mqtt.setUserPrefix(USER_PREFIX);   // prefix topik $status/heartbeat
     mqtt.onConnect(onMqttConnected);
     mqtt.onDisconnect(onMqttDisconnected);
     mqtt.onMessage(onMessage);

@@ -2,7 +2,7 @@
 
 /*
  * ============================================================================
- * ElectinsMqtt.h — Internal MQTT 3.1.1 Engine (v2.1.1)
+ * ElectinsMqtt.h — Internal MQTT 3.1.1 Engine (v2.1.2)
  * ============================================================================
  *
  * Layer TCP  : WiFiClient / WiFiClientSecure (built-in ESP32/ESP8266 SDK)

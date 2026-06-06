@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-**v2.1.1** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
+**v2.1.2** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
 One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
 ### How It Works
@@ -144,6 +144,11 @@ mqtt.setDebug(true);               // Serial debug logs
 mqtt.setKeepAlive(30);             // MQTT keepalive, seconds (default 15)
 mqtt.setReconnectInterval(10);     // reconnect retry interval, seconds (default 5)
 mqtt.setHeartbeatInterval(60);     // heartbeat interval, seconds (default 30)
+mqtt.setUserPrefix("ID-XXXXXXXX"); // user prefix for $status topic (optional)
+                                   // → <userPrefix>/<projectSlug>/$status
+                                   // useful when broker username (e.g. "PRJ-XXXX")
+                                   // differs from your topic prefix (e.g. "ID-XXXX").
+                                   // If not set, falls back to mqttUser.
 ```
 
 ### Status
@@ -219,7 +224,7 @@ mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) 
 <a name="indonesia"></a>
 ## Indonesia
 
-**v2.1.1** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
+**v2.1.2** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
 Satu panggilan di `setup()`. Tidak ada apapun di `loop()`. Tidak perlu install library lain.
 
 ### Cara Kerja
@@ -356,6 +361,12 @@ mqtt.setDebug(true);               // log debug ke Serial
 mqtt.setKeepAlive(30);             // keepalive MQTT, detik (default 15)
 mqtt.setReconnectInterval(10);     // interval reconnect, detik (default 5)
 mqtt.setHeartbeatInterval(60);     // interval heartbeat, detik (default 30)
+mqtt.setUserPrefix("ID-XXXXXXXX"); // prefix pengguna untuk topik $status (opsional)
+                                   // → <userPrefix>/<projectSlug>/$status
+                                   // dipakai saat username broker (mis. "PRJ-XXXX")
+                                   // berbeda dengan prefix topik milik pengguna
+                                   // (mis. "ID-XXXX"). Jika tidak diset, fallback
+                                   // ke mqttUser.
 ```
 
 ### Status
