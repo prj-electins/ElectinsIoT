@@ -2,7 +2,7 @@
 
 /*
  * ============================================================================
- * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.3)
+ * ElectinsIoT.h — Zero-dependency Async MQTT Library (v2.1.4)
  * ============================================================================
  *
  * Engine  : ElectinsMqtt (MQTT 3.1.1 built-in, tanpa dependensi eksternal)
@@ -59,7 +59,7 @@
 #endif
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
-#define ELECTINS_VERSION          "2.1.3"
+#define ELECTINS_VERSION          "2.1.4"
 #define ELECTINS_MAX_SUBS         16
 #define ELECTINS_TOPIC_BUF_LEN    128
 #define ELECTINS_STR_BUF_LEN      64
@@ -70,7 +70,7 @@
 #define ELECTINS_TASK_PRIO        1    // prioritas task MQTT (ESP32)
 
 // ─── QoS ─────────────────────────────────────────────────────────────────────
-enum MqttQoS { QOS0 = 0, QOS1 = 1 };
+enum MqttQoS { QOS0 = 0, QOS1 = 1, QOS2 = 2 };
 
 // ─── MqttParam — helper akses payload masuk ───────────────────────────────────
 class MqttParam {
@@ -156,7 +156,7 @@ public:
     void setHeartbeatInterval(uint16_t seconds);
 
     // Override prefix pengguna untuk topik $status (opsional).
-    // Sejak v2.1.3 prefix WAJIB diisi via parameter begin(); setter ini
+    // Mulai v2.1.3 prefix WAJIB diisi via parameter begin(); setter ini
     // hanya untuk skenario lanjut (mis. mengganti prefix saat runtime).
     // Jika dipanggil setelah begin(), $status akan dibangun ulang otomatis.
     void setUserPrefix(const char* prefix);

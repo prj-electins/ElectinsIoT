@@ -333,6 +333,14 @@ void ElectinsMqtt::_readIncoming() {
                 _rxPayloadRead++;
             }
             if (_rxPayloadRead < remLen) return; // tunggu sisa byte
+            // Beritahu pengguna agar tahu paket di-drop (bukan diam-diam)
+            if (_debugCb) {
+                char info[48];
+                snprintf(info, sizeof(info),
+                         "remLen=%u > RX_BUF=%u — dropped",
+                         (unsigned)remLen, (unsigned)EMQTT_RX_BUF_SIZE);
+                _debugCb("[MQTT] RX OVERSIZED ", info);
+            }
             _resetRxState();
             continue;
         }
@@ -362,13 +370,42 @@ void ElectinsMqtt::_handlePacket(uint8_t hdr, uint32_t remLen) {
             _dispatchPublish(hdr, remLen);
             break;
         case EMQTT_PUBACK:
-            if (remLen >= 2) _clearPending((uint16_t)((_rxBuf[0] << 8) | _rxBuf[1]));
+            if (remLen >= 2) {
+                uint16_t pid = (uint16_t)((_rxBuf[0] << 8) | _rxBuf[1]);
+                _clearPending(pid);
+                if (_debugCb) {
+                    char b[16]; snprintf(b, sizeof(b), "pid=%u", (unsigned)pid);
+                    _debugCb("[MQTT] RX PUBACK   ", b);
+                }
+            }
+            break;
+        case EMQTT_SUBACK:
+            // SUBACK = packet ID (2 byte) + return code per topic.
+            // Return code = QoS yang di-grant broker (atau 0x80 = failure).
+            if (_debugCb && remLen >= 3) {
+                uint16_t pid = (uint16_t)((_rxBuf[0] << 8) | _rxBuf[1]);
+                uint8_t  rc  = _rxBuf[2];
+                char b[40];
+                if (rc == 0x80) {
+                    snprintf(b, sizeof(b), "pid=%u FAILURE", (unsigned)pid);
+                } else {
+                    snprintf(b, sizeof(b), "pid=%u QoS=%u granted",
+                             (unsigned)pid, (unsigned)(rc & 0x03));
+                }
+                _debugCb("[MQTT] RX SUBACK   ", b);
+            }
+            break;
+        case 0x60: // PUBREL — broker lanjutan QoS 2 flow (setelah kita kirim PUBREC)
+            if (remLen >= 2) {
+                uint16_t pid = (uint16_t)((_rxBuf[0] << 8) | _rxBuf[1]);
+                bool ok = _sendPubComp(pid); // selesaikan QoS 2 handshake
+                if (_debugCb) _debugCb("[MQTT] TX PUBCOMP  ", ok ? "ok" : "FAILED");
+            }
             break;
         case EMQTT_PINGRESP:
             _pingPending = false;
             _lastPingAt  = millis();
             break;
-        case EMQTT_SUBACK:
         case EMQTT_UNSUBACK:
         default:
             break; // tidak perlu aksi — payload sudah dikonsumsi ke _rxBuf
@@ -402,11 +439,41 @@ void ElectinsMqtt::_dispatchPublish(uint8_t hdr, uint32_t remLen) {
 
     _rxBuf[remLen] = '\0'; // guard byte — null-terminator aman
 
+    // ── Kirim acknowledgment DULU sebelum panggil callback user ──────────────
+    // Penting untuk hardware-sensitive callbacks (IR, NeoPixel, Servo, dll):
+    //   - Broker langsung dapat ack → tidak akan retransmit (tidak ada paket
+    //     masuk lagi yang men-trigger interrupt jaringan saat callback jalan)
+    //   - TCP/WiFi TX queue idle saat callback eksekusi → tidak ada radio
+    //     activity yang men-jitter timing pin GPIO
+    //
+    // QoS 1 → PUBACK
+    // QoS 2 → PUBREC (handshake dilanjutkan via case 0x60 PUBREL → PUBCOMP)
+    if (qos == 1) {
+        bool ok = _sendPubAck(pid);
+        if (_debugCb) _debugCb("[MQTT] TX PUBACK   ", ok ? "ok" : "FAILED");
+    } else if (qos == 2) {
+        bool ok = _sendPubRec(pid);
+        if (_debugCb) _debugCb("[MQTT] TX PUBREC   ", ok ? "ok" : "FAILED");
+    }
+
+    // Beri kesempatan FreeRTOS scheduler menyelesaikan WiFi TX di core lain
+    // sebelum callback user yang mungkin sensitif timing dijalankan.
+    if (qos >= 1) yield();
+
+    // Log diagnostik (membantu diagnosa kenapa pesan QoS tertentu tak ter-handle)
+    if (_debugCb) {
+        char info[64];
+        snprintf(info, sizeof(info), "QoS=%u retain=%d len=%u pid=%u",
+                 (unsigned)qos, (int)retain,
+                 (unsigned)payloadLen, (unsigned)pid);
+        _debugCb("[MQTT] RX PUBLISH ", info);
+        _debugCb("[MQTT] RX topic    ", topic);
+    }
+
+    // ── Sekarang baru panggil callback user — jaringan sudah idle ───────────
     if (_messageCb) {
         _messageCb(topic, (char*)(_rxBuf + payloadStart), payloadLen, qos, retain);
     }
-
-    if (qos == 1) _sendPubAck(pid);
 }
 
 // ─── Keepalive ─────────────────────────────────────────────────────────────────
@@ -467,7 +534,7 @@ uint16_t ElectinsMqtt::publish(const char* topic, const char* payload,
 
 uint16_t ElectinsMqtt::subscribe(const char* topic, uint8_t qos) {
     if (_state != EMQTT_CONNECTED || !topic) return 0;
-    qos = qos & 0x01;
+    if (qos > 2) qos = 2;   // QoS 0, 1, 2 didukung untuk subscribe
 
     uint16_t topicLen = (uint16_t)strlen(topic);
     uint32_t remLen   = (uint32_t)(2 + 2 + topicLen + 1);
@@ -563,6 +630,22 @@ bool ElectinsMqtt::_sendPingReq() {
 bool ElectinsMqtt::_sendPubAck(uint16_t pid) {
     uint8_t pkt[4] = {
         EMQTT_PUBACK, 0x02,
+        (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF)
+    };
+    return _writeDirect(pkt, 4);
+}
+
+bool ElectinsMqtt::_sendPubRec(uint16_t pid) {
+    uint8_t pkt[4] = {
+        0x50, 0x02, // PUBREC fixed header
+        (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF)
+    };
+    return _writeDirect(pkt, 4);
+}
+
+bool ElectinsMqtt::_sendPubComp(uint16_t pid) {
+    uint8_t pkt[4] = {
+        0x70, 0x02, // PUBCOMP fixed header
         (uint8_t)(pid >> 8), (uint8_t)(pid & 0xFF)
     };
     return _writeDirect(pkt, 4);

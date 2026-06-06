@@ -2,7 +2,7 @@
 
 /*
  * ============================================================================
- * ElectinsMqtt.h — Internal MQTT 3.1.1 Engine (v2.1.3)
+ * ElectinsMqtt.h — Internal MQTT 3.1.1 Engine (v2.1.4)
  * ============================================================================
  *
  * Layer TCP  : WiFiClient / WiFiClientSecure (built-in ESP32/ESP8266 SDK)
@@ -60,8 +60,14 @@
 #define EMQTT_CONN_ACCEPTED  0x00
 
 // ─── Buffer & timing ──────────────────────────────────────────────────────────
-#define EMQTT_TX_SCRATCH_SIZE 512    // buffer enkode sementara (di bawah mutex)
-#define EMQTT_RX_BUF_SIZE     512    // payload masuk maksimum
+#define EMQTT_TX_SCRATCH_SIZE 1024   // buffer enkode sementara (di bawah mutex)
+
+#if defined(ESP8266)
+  #define EMQTT_RX_BUF_SIZE   1024   // payload masuk maksimum (RAM lebih kecil)
+#else
+  #define EMQTT_RX_BUF_SIZE   2048   // payload masuk maksimum
+#endif
+
 #define EMQTT_RX_GUARD_SIZE   (EMQTT_RX_BUF_SIZE + 1) // +1 null-terminator aman
 #define EMQTT_MAX_TOPIC_LEN   128
 
@@ -81,6 +87,7 @@ typedef void (*EmqttConnectCb)();
 typedef void (*EmqttDisconnectCb)();
 typedef void (*EmqttMessageCb)(const char* topic, const char* payload,
                                uint16_t length, uint8_t qos, bool retain);
+typedef void (*EmqttDebugCb)(const char* msg, const char* val);
 
 // ─── QoS1 pending ACK ────────────────────────────────────────────────────────
 struct EmqttPendingAck {
@@ -132,6 +139,7 @@ public:
     void onConnect(EmqttConnectCb cb)       { _connectCb    = cb; }
     void onDisconnect(EmqttDisconnectCb cb) { _disconnectCb = cb; }
     void onMessage(EmqttMessageCb cb)       { _messageCb    = cb; }
+    void onDebug(EmqttDebugCb cb)           { _debugCb      = cb; }
 
     // ── Pump engine — HARUS dipanggil dari satu konteks pemilik saja ──────────
     // (task khusus di ESP32, scheduled function di ESP8266)
@@ -196,6 +204,7 @@ private:
     EmqttConnectCb    _connectCb    = nullptr;
     EmqttDisconnectCb _disconnectCb = nullptr;
     EmqttMessageCb    _messageCb    = nullptr;
+    EmqttDebugCb      _debugCb      = nullptr;
 
     // ── Mutex (producer outbox + packetId + scratch) ──────────────────────────
 #if defined(ESP32)
@@ -226,6 +235,8 @@ private:
     bool _sendConnect();
     bool _sendPingReq();
     bool _sendPubAck(uint16_t packetId);
+    bool _sendPubRec(uint16_t packetId);
+    bool _sendPubComp(uint16_t packetId);
     bool _sendDisconnect();
     bool _writeDirect(const uint8_t* data, uint16_t len);
 

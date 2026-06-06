@@ -1,5 +1,5 @@
 /**
- * AdvancedIoT.ino — ElectinsIoT v2.1.3 Advanced Example
+ * AdvancedIoT.ino — ElectinsIoT v2.1.4 Advanced Example
  * ───────────────────────────────────────────────────
  * Demonstrasi fitur lengkap:
  *   - Multi-topic subscribe + per-topic callback

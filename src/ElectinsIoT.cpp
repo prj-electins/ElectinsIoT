@@ -1,5 +1,5 @@
 /*
- * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.3)
+ * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.4)
  *
  * Menggunakan ElectinsMqtt engine internal (single-owner + outbox).
  * Engine dipompa dari SATU konteks: FreeRTOS task khusus (ESP32) atau
@@ -228,6 +228,12 @@ void ElectinsIoT::_setupMqttCallbacks() {
         if (ElectinsIoT::_instance)
             ElectinsIoT::_instance->_onMqttMessage(topic, payload,
                                                     length, qos, retain);
+    });
+    // Debug log dari engine — hanya tampil jika setDebug(true).
+    // Berguna untuk diagnosa penerimaan QoS 1/2, paket oversized, dll.
+    _mqttEngine.onDebug([](const char* msg, const char* val) {
+        if (ElectinsIoT::_instance)
+            ElectinsIoT::_instance->_log(msg, val);
     });
 }
 

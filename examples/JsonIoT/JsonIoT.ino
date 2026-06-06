@@ -1,5 +1,5 @@
 /**
- * JsonIoT.ino — ElectinsIoT v2.1.3 JSON Helper Example
+ * JsonIoT.ino — ElectinsIoT v2.1.4 JSON Helper Example
  * ──────────────────────────────────────────────────
  * Requires: ArduinoJson by Benoit Blanchon
  *           (install via Library Manager)

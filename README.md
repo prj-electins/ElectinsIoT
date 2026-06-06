@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-**v2.1.3** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
+**v2.1.4** — Zero-dependency async MQTT library for ESP32 and ESP8266.  
 One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
 ### How It Works
@@ -141,6 +141,23 @@ mqtt.onMessage([](const char* topic, const char* payload, size_t len) {
 });
 ```
 
+> **Hardware-sensitive callbacks (IR, NeoPixel, Servo, bit-banged peripherals).**  
+> The library sends QoS 1 PUBACK before invoking your callback, so the network
+> stack is idle while your callback runs. For long microsecond-precise routines
+> like `irsend.sendGree()` or `FastLED.show()`, the recommended pattern is still
+> to keep the callback short — set a flag and execute the long operation from
+> `loop()`:
+> ```cpp
+> volatile bool g_doSend = false;
+> int g_temp = 0;
+>
+> void onCmd(MqttParam& p) { g_temp = p.asInt(); g_doSend = true; }
+>
+> void loop() {
+>     if (g_doSend) { g_doSend = false; irsend.sendGree(g_temp); }
+> }
+> ```
+
 ### Configuration (call before begin)
 
 ```cpp
@@ -223,7 +240,7 @@ mqtt.subscribeJson("user/proj/config", [](const char* topic, JsonDocument& doc) 
 <a name="indonesia"></a>
 ## Indonesia
 
-**v2.1.3** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
+**v2.1.4** — Library async MQTT tanpa dependensi eksternal untuk ESP32 dan ESP8266.  
 Satu panggilan di `setup()`. Tidak ada apapun di `loop()`. Tidak perlu install library lain.
 
 ### Cara Kerja
@@ -356,6 +373,22 @@ mqtt.onMessage([](const char* topic, const char* payload, size_t len) {
     // fallback global — dipanggil untuk semua pesan masuk
 });
 ```
+
+> **Callback yang sensitif timing (IR, NeoPixel, Servo, peripheral bit-bang).**  
+> Library mengirim PUBACK QoS 1 SEBELUM memanggil callback Anda, jadi network
+> stack idle selama callback berjalan. Untuk rutin presisi mikrodetik yang panjang
+> seperti `irsend.sendGree()` atau `FastLED.show()`, pola yang dianjurkan tetap
+> menjaga callback singkat — set flag, lalu eksekusi operasi panjang dari `loop()`:
+> ```cpp
+> volatile bool g_doSend = false;
+> int g_temp = 0;
+>
+> void onCmd(MqttParam& p) { g_temp = p.asInt(); g_doSend = true; }
+>
+> void loop() {
+>     if (g_doSend) { g_doSend = false; irsend.sendGree(g_temp); }
+> }
+> ```
 
 ### Konfigurasi (panggil sebelum begin)
 

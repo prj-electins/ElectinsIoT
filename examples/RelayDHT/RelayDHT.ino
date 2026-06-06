@@ -1,5 +1,5 @@
 /**
- * RelayDHT.ino — ElectinsIoT v2.1.3 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v2.1.4 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
  * Kontrol relay via MQTT dan kirim data sensor DHT11/DHT22.
  *

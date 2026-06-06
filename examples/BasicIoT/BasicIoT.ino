@@ -1,5 +1,5 @@
 /**
- * BasicIoT.ino — ElectinsIoT v2.1.3 Basic Example
+ * BasicIoT.ino — ElectinsIoT v2.1.4 Basic Example
  * ─────────────────────────────────────────────
  * Library otomatis menangani di background:
  *   - Koneksi WiFi & MQTT
