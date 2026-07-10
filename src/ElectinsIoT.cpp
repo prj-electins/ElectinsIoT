@@ -1,466 +1,811 @@
-/*
- * ElectinsIoT.cpp — Zero-dependency Async MQTT Library (v2.1.4)
- *
- * Menggunakan ElectinsMqtt engine internal (single-owner + outbox).
- * Engine dipompa dari SATU konteks: FreeRTOS task khusus (ESP32) atau
- * scheduled function (ESP8266). void loop() pengguna tetap kosong.
- */
-
 #include "ElectinsIoT.h"
 #include <stdio.h>
 #include <string.h>
 
-// ─── Static instance pointer ──────────────────────────────────────────────────
-ElectinsIoT* ElectinsIoT::_instance = nullptr;
-
-// ─── Constructor ──────────────────────────────────────────────────────────────
-
-ElectinsIoT::ElectinsIoT() {
-    memset(_subs, 0, sizeof(_subs));
-    _instance = this;
-}
-
-// ─── Konfigurasi ─────────────────────────────────────────────────────────────
-
-void ElectinsIoT::setDebug(bool e)             { _debug        = e; }
-void ElectinsIoT::setKeepAlive(uint16_t s)     { _keepAliveSec = s > 0 ? s : 15; }
-void ElectinsIoT::setReconnectInterval(uint16_t s) { _reconnectSec = s > 0 ? s : 1; }
-void ElectinsIoT::setHeartbeatInterval(uint16_t s) { _heartbeatSec = s > 0 ? s : 30; }
-void ElectinsIoT::setSecure(bool e)            { _secure    = e; }
-void ElectinsIoT::setInsecure(bool i)          { _insecure  = i; }
-
-void ElectinsIoT::setUserPrefix(const char* prefix) {
-    if (!prefix) { _userPrefix[0] = '\0'; return; }
-    strncpy(_userPrefix, prefix, sizeof(_userPrefix) - 1);
-    _userPrefix[sizeof(_userPrefix) - 1] = '\0';
-
-    // Rebuild $status topic kalau begin() sudah pernah dipanggil
-    // (urutan panggilan jadi tidak jadi jebakan).
-    if (_projectSlug[0] != '\0' && _userPrefix[0] != '\0') {
-        snprintf(_statusTopic, sizeof(_statusTopic),
-                 "%s/%s/$status", _userPrefix, _projectSlug);
-        _mqttEngine.setWill(_statusTopic, "offline", true, 0);
-        _log("[Electins] Status topic (rebuilt): ", _statusTopic);
-    }
-}
-
-// ─── Callback ────────────────────────────────────────────────────────────────
-
-void ElectinsIoT::onConnect(MqttConnectCallback cb)       { _connectCb    = cb; }
-void ElectinsIoT::onDisconnect(MqttDisconnectCallback cb) { _disconnectCb = cb; }
-void ElectinsIoT::onMessage(MqttMessageCallback cb)       { _messageCb    = cb; }
-
-// ─── ENTRY POINT ─────────────────────────────────────────────────────────────
-
-void ElectinsIoT::begin(const char* ssid,     const char* wifiPass,
-                        const char* mqttHost, uint16_t    mqttPort,
-                        const char* clientId,
-                        const char* mqttUser, const char* mqttPass,
-                        const char* userPrefix,
-                        const char* projectSlug) {
-
-    if (!ssid || !mqttHost || !clientId || !mqttUser) {
-        _log("[Electins] begin(): parameter wajib tidak boleh null");
-        return;
-    }
-
-    // userPrefix WAJIB. Tanpa ini, topik $status tidak punya bentuk yang benar
-    // di setup multi-tenant (mqttUser = kredensial broker, bukan prefix topik).
-    if (!userPrefix || userPrefix[0] == '\0') {
-        _log("[Electins] begin(): userPrefix wajib diisi (mis. \"ID-XXXXXXXX\")");
-        return;
-    }
-
-    // Salin semua string ke buffer internal
-    strncpy(_ssid,     ssid,                  sizeof(_ssid)     - 1);
-    strncpy(_wifiPass, wifiPass  ? wifiPass  : "", sizeof(_wifiPass) - 1);
-    strncpy(_mqttHost, mqttHost,               sizeof(_mqttHost) - 1);
-    strncpy(_clientId, clientId,               sizeof(_clientId) - 1);
-    strncpy(_mqttUser, mqttUser,               sizeof(_mqttUser) - 1);
-    strncpy(_mqttPass, mqttPass  ? mqttPass  : "", sizeof(_mqttPass) - 1);
-    strncpy(_userPrefix, userPrefix,           sizeof(_userPrefix) - 1);
-    strncpy(_projectSlug,
-            (projectSlug && projectSlug[0] != '\0') ? projectSlug : "device",
-            sizeof(_projectSlug) - 1);
-    _ssid[sizeof(_ssid)-1]             = '\0';
-    _wifiPass[sizeof(_wifiPass)-1]     = '\0';
-    _mqttHost[sizeof(_mqttHost)-1]     = '\0';
-    _clientId[sizeof(_clientId)-1]     = '\0';
-    _mqttUser[sizeof(_mqttUser)-1]     = '\0';
-    _mqttPass[sizeof(_mqttPass)-1]     = '\0';
-    _userPrefix[sizeof(_userPrefix)-1] = '\0';
-    _projectSlug[sizeof(_projectSlug)-1] = '\0';
-    _mqttPort = mqttPort;
-
-    // Bangun topik $status: <userPrefix>/<projectSlug>/$status
-    // Selalu pakai _userPrefix (tidak ada lagi fallback ke mqttUser).
-    snprintf(_statusTopic, sizeof(_statusTopic),
-             "%s/%s/$status",
-             _userPrefix,
-             _projectSlug);
-    _log("[Electins] Status topic: ", _statusTopic);
-
-    // Setup WiFi event dan MQTT callbacks (sekali saja — cegah double-register)
-    if (!_wifiHandlerSet) {
-        _setupWiFiHandlers();
-        _setupMqttCallbacks();
-        _wifiHandlerSet = true;
-    }
-
-    // Konfigurasi MQTT engine
-    _mqttEngine.begin();   // buat mutex (ESP32) — aman dipanggil berulang
-    _mqttEngine.setServer(_mqttHost, _mqttPort);
-    _mqttEngine.setClientId(_clientId);
-    _mqttEngine.setKeepAlive(_keepAliveSec);
-    _mqttEngine.setReconnectInterval(_reconnectSec);
-    _mqttEngine.setSecure(_secure);
-    _mqttEngine.setInsecure(_insecure);
-
-    if (_mqttUser[0] != '\0')
-        _mqttEngine.setCredentials(_mqttUser,
-                                   _mqttPass[0] != '\0' ? _mqttPass : nullptr);
-
-    // LWT otomatis
-    _mqttEngine.setWill(_statusTopic, "offline", true, 0);
-    _log("[Electins] LWT: ", _statusTopic);
-
-    // Jalankan pump engine di satu konteks pemilik:
-    //   ESP32     → FreeRTOS task khusus (stack besar, aman untuk TLS)
-    //   ESP8266   → scheduled function (dijalankan di konteks loop, bukan ISR)
-    _startService();
-
-    // Mulai koneksi WiFi (engine akan connect MQTT otomatis saat WiFi siap)
-    _connectToWiFi();
-}
-
-// ─── Pump engine (single owner) ────────────────────────────────────────────────
-
-void ElectinsIoT::_startService() {
 #if defined(ESP32)
-    if (_taskHandle) return;
-    xTaskCreatePinnedToCore(
-        _taskTrampoline, "electinsMqtt",
-        ELECTINS_TASK_STACK, this, ELECTINS_TASK_PRIO,
-        &_taskHandle, 1 /* core 1 — sama dengan loop() */);
+  #include <WiFi.h>
+  #include <HTTPClient.h>
+  #include <Update.h>
+  #include <WiFiClientSecure.h>
+  #include <esp_ota_ops.h>
+  #include <freertos/semphr.h>
 #elif defined(ESP8266)
-    if (_serviceScheduled) return;
-    _serviceScheduled = true;
-    schedule_recurrent_function_us([]() -> bool {
-        if (ElectinsIoT::_instance) ElectinsIoT::_instance->_service();
-        return true; // tetap terjadwal
-    }, (uint32_t)ELECTINS_SERVICE_MS * 1000UL);
-#endif
-}
-
-#if defined(ESP32)
-void ElectinsIoT::_taskTrampoline(void* arg) {
-    ElectinsIoT* self = static_cast<ElectinsIoT*>(arg);
-    for (;;) {
-        self->_service();
-        vTaskDelay(pdMS_TO_TICKS(ELECTINS_SERVICE_MS));
-    }
-}
+  #include <ESP8266WiFi.h>
+  #include <WiFiClientSecure.h>
+  #include <ESP8266HTTPClient.h>
+  #include <ESP8266httpUpdate.h>
+  #include <Ticker.h>
 #endif
 
-void ElectinsIoT::_service() {
-    _mqttEngine.loop();
-
-    // Heartbeat "online" — dijalankan di konteks pemilik yang sama (aman)
-    if (_heartbeatSec > 0 && _mqttEngine.connected()) {
-        uint32_t now = millis();
-        if ((uint32_t)(now - _lastHeartbeat) >= (uint32_t)_heartbeatSec * 1000UL) {
-            _lastHeartbeat = now;
-            _publishOnline();
-        }
+// Protobuf wire helper functions
+static size_t writeVarint(uint8_t* buf, uint64_t val) {
+    size_t len = 0;
+    while (val >= 0x80) {
+        buf[len++] = (uint8_t)((val & 0x7F) | 0x80);
+        val >>= 7;
     }
+    buf[len++] = (uint8_t)(val & 0x7F);
+    return len;
 }
 
-// ─── WiFi event handlers ──────────────────────────────────────────────────────
-
-void ElectinsIoT::_setupWiFiHandlers() {
-#if defined(ESP32)
-    WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t /*info*/) {
-        ElectinsIoT* self = ElectinsIoT::_instance;
-        if (!self) return;
-
-        if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
-            self->_log("[WiFi] Terhubung ke ip ", WiFi.localIP().toString().c_str());
-            // Tidak perlu trigger MQTT di sini — engine connect otomatis saat
-            // WiFi siap. WiFi-event TIDAK menyentuh socket (cegah race).
-        }
-        else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-            self->_log("[WiFi] Terputus — menunggu auto-reconnect");
-            // Hanya urus WiFi. Engine akan mendeteksi socket mati di loop()-nya.
-            WiFi.reconnect();
-        }
-    });
-
-#elif defined(ESP8266)
-    static WiFiEventHandler _evGotIP =
-        WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP&) {
-            ElectinsIoT* self = ElectinsIoT::_instance;
-            if (!self) return;
-            self->_log("[WiFi] Terhubung ke ip ", WiFi.localIP().toString().c_str());
-        });
-
-    static WiFiEventHandler _evDiscon =
-        WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected&) {
-            ElectinsIoT* self = ElectinsIoT::_instance;
-            if (!self) return;
-            self->_log("[WiFi] Terputus — menunggu auto-reconnect");
-        });
-#endif
-}
-
-// ─── MQTT internal callbacks ──────────────────────────────────────────────────
-
-void ElectinsIoT::_setupMqttCallbacks() {
-    _mqttEngine.onConnect([]() {
-        if (ElectinsIoT::_instance)
-            ElectinsIoT::_instance->_onMqttConnected();
-    });
-    _mqttEngine.onDisconnect([]() {
-        if (ElectinsIoT::_instance)
-            ElectinsIoT::_instance->_onMqttDisconnected();
-    });
-    _mqttEngine.onMessage([](const char* topic, const char* payload,
-                              uint16_t length, uint8_t qos, bool retain) {
-        if (ElectinsIoT::_instance)
-            ElectinsIoT::_instance->_onMqttMessage(topic, payload,
-                                                    length, qos, retain);
-    });
-    // Debug log dari engine — hanya tampil jika setDebug(true).
-    // Berguna untuk diagnosa penerimaan QoS 1/2, paket oversized, dll.
-    _mqttEngine.onDebug([](const char* msg, const char* val) {
-        if (ElectinsIoT::_instance)
-            ElectinsIoT::_instance->_log(msg, val);
-    });
-}
-
-void ElectinsIoT::_onMqttConnected() {
-    _log("[MQTT] Tersambung ke broker");
-
-    _resubscribeAll();
-    _publishOnline();
-    _lastHeartbeat = millis();   // reset jadwal heartbeat (dikelola _service)
-
-    if (_connectCb) _connectCb();
-}
-
-void ElectinsIoT::_onMqttDisconnected() {
-    _log("[MQTT] Terputus — engine akan reconnect otomatis");
-    // Tidak ada ticker untuk di-detach. Engine menangani reconnect sendiri
-    // di loop()-nya (dengan backoff _reconnectSec) begitu WiFi tersedia.
-    if (_disconnectCb) _disconnectCb();
-}
-
-void ElectinsIoT::_onMqttMessage(const char* topic, const char* payload,
-                                  uint16_t length, uint8_t /*qos*/,
-                                  bool /*retain*/) {
-    _dispatchMessage(topic, payload, length);
-}
-
-// ─── WiFi & MQTT connect ──────────────────────────────────────────────────────
-
-void ElectinsIoT::_connectToWiFi() {
-    // Jika sudah tersambung, engine akan langsung lanjut ke MQTT di loop()-nya.
-    if (WiFi.status() == WL_CONNECTED && WiFi.localIP()[0] != 0) {
-        _log("[WiFi] Terhubung ke ip ", WiFi.localIP().toString().c_str());
-        return;
-    }
-    _log("[WiFi] Menghubungkan ke wifi (SSID): ", _ssid);
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(_ssid, _wifiPass[0] != '\0' ? _wifiPass : nullptr);
-}
-
-// ─── Publish "online" ─────────────────────────────────────────────────────────
-
-void ElectinsIoT::_publishOnline() {
-    if (!_mqttEngine.connected() || _statusTopic[0] == '\0') return;
-    _mqttEngine.publish(_statusTopic, "online",
-                        strlen("online"), true /*retain*/, 0 /*QoS*/);
-    _log("[MQTT] status 'online' → ", _statusTopic);
-}
-
-// ─── Re-subscribe setelah reconnect ──────────────────────────────────────────
-
-void ElectinsIoT::_resubscribeAll() {
-    for (uint8_t i = 0; i < _subCount; i++) {
-        if (_subs[i].active) {
-            _mqttEngine.subscribe(_subs[i].topic, _subs[i].qos);
-            _log("[MQTT] Subscribe: ", _subs[i].topic);
-        }
-    }
-}
-
-// ─── Subscribe ────────────────────────────────────────────────────────────────
-
-bool ElectinsIoT::_registerSub(const char* topic,
-                                MqttTopicCallback rawCb,
-                                MqttParamCallback paramCb,
-                                MqttGenericFn     jsonUserCb,
-                                MqttJsonInvoker   jsonInvoke,
-                                MqttQoS qos) {
-    if (!topic) return false;
-
-    // Update entry yang sudah ada
-    for (uint8_t i = 0; i < _subCount; i++) {
-        if (strcmp(_subs[i].topic, topic) == 0) {
-            _subs[i].rawCallback   = rawCb;
-            _subs[i].paramCallback = paramCb;
-            _subs[i].jsonUserCb    = jsonUserCb;
-            _subs[i].jsonInvoke    = jsonInvoke;
-            _subs[i].qos    = (uint8_t)qos;
-            _subs[i].active = true;
-            if (_mqttEngine.connected()) {
-                _mqttEngine.subscribe(topic, (uint8_t)qos);
-                _log("[MQTT] Subscribe: ", topic);
-            }
-            return true;
-        }
-    }
-
-    // Tambah entry baru
-    if (_subCount >= ELECTINS_MAX_SUBS) {
-        _log("[MQTT] Batas maksimum subscription tercapai");
-        return false;
-    }
-
-    uint8_t idx = _subCount;
-    strncpy(_subs[idx].topic, topic, sizeof(_subs[0].topic) - 1);
-    _subs[idx].topic[sizeof(_subs[0].topic) - 1] = '\0';
-    _subs[idx].rawCallback   = rawCb;
-    _subs[idx].paramCallback = paramCb;
-    _subs[idx].jsonUserCb    = jsonUserCb;
-    _subs[idx].jsonInvoke    = jsonInvoke;
-    _subs[idx].qos    = (uint8_t)qos;
-    _subs[idx].active = true;
-
-    if (_mqttEngine.connected()) {
-        _mqttEngine.subscribe(topic, (uint8_t)qos);
-        _log("[MQTT] Subscribe: ", topic);
-    }
-    _subCount++;
-    return true;
-}
-
-bool ElectinsIoT::subscribe(const char* topic, MqttQoS qos) {
-    return _registerSub(topic, nullptr, nullptr, nullptr, nullptr, qos);
-}
-
-bool ElectinsIoT::subscribe(const char* topic, MqttParamCallback cb, MqttQoS qos) {
-    return _registerSub(topic, nullptr, cb, nullptr, nullptr, qos);
-}
-
-bool ElectinsIoT::subscribe(const char* topic, MqttTopicCallback cb, MqttQoS qos) {
-    return _registerSub(topic, cb, nullptr, nullptr, nullptr, qos);
-}
-
-// subscribeJson() & publishJson() bersifat header-only (lihat ElectinsIoT.h)
-// agar kode ArduinoJson hanya dikompilasi di TU pengguna.
-
-bool ElectinsIoT::unsubscribe(const char* topic) {
-    if (!topic) return false;
-    for (uint8_t i = 0; i < _subCount; i++) {
-        if (strcmp(_subs[i].topic, topic) == 0) {
-            _subs[i].active = false;
-            if (_mqttEngine.connected()) {
-                _mqttEngine.unsubscribe(topic);
-                _log("[MQTT] Unsubscribe: ", topic);
-            }
-            return true;
-        }
+static bool parseVarint(const uint8_t* buf, size_t maxLen, size_t& offset, uint64_t& val) {
+    val = 0;
+    size_t shift = 0;
+    while (offset < maxLen) {
+        uint8_t b = buf[offset++];
+        val |= (uint64_t)(b & 0x7F) << shift;
+        if (!(b & 0x80)) return true;
+        shift += 7;
+        if (shift >= 64) return false;
     }
     return false;
 }
 
-// ─── Publish ──────────────────────────────────────────────────────────────────
+struct DecodedCommand {
+    int type = 0;
+    char target_param[64] = {0};
+    double value = 0.0;
+    char metadata[256] = {0};
+    char string_value[256] = {0};
+};
 
-bool ElectinsIoT::publish(const char* topic, const char* payload,
-                           bool retain, MqttQoS qos) {
-    if (!_mqttEngine.connected() || !topic || !payload) return false;
-    uint16_t pid = _mqttEngine.publish(topic, payload,
-                                       strlen(payload), retain, (uint8_t)qos);
-    if (pid > 0) _log("[MQTT] Publish → ", topic);
-    return pid > 0;
+static bool decodeCommand(const uint8_t* buf, size_t len, DecodedCommand& out) {
+    size_t offset = 0;
+    while (offset < len) {
+        uint64_t tag = 0;
+        if (!parseVarint(buf, len, offset, tag)) return false;
+        uint32_t field = tag >> 3;
+        uint32_t wire = tag & 7;
+
+        if (wire == 0) { // Varint
+            uint64_t val = 0;
+            if (!parseVarint(buf, len, offset, val)) return false;
+            if (field == 1) out.type = (int)val;
+        } else if (wire == 1) { // 64-bit (double)
+            if (len - offset < 8) return false;
+            double val;
+            memcpy(&val, &buf[offset], 8);
+            offset += 8;
+            if (field == 3) out.value = val;
+        } else if (wire == 2) { // Length-delimited (string)
+            uint64_t strLen = 0;
+            if (!parseVarint(buf, len, offset, strLen)) return false;
+            if (strLen > len - offset) return false;
+
+            if (field == 2) {
+                size_t cpy = strLen < sizeof(out.target_param) - 1 ? strLen : sizeof(out.target_param) - 1;
+                memcpy(out.target_param, &buf[offset], cpy);
+                out.target_param[cpy] = '\0';
+            } else if (field == 4) {
+                size_t cpy = strLen < sizeof(out.metadata) - 1 ? strLen : sizeof(out.metadata) - 1;
+                memcpy(out.metadata, &buf[offset], cpy);
+                out.metadata[cpy] = '\0';
+            } else if (field == 5) {
+                size_t cpy = strLen < sizeof(out.string_value) - 1 ? strLen : sizeof(out.string_value) - 1;
+                memcpy(out.string_value, &buf[offset], cpy);
+                out.string_value[cpy] = '\0';
+            }
+            offset += strLen;
+        } else {
+            if (wire == 5) {
+                if (len - offset < 4) return false;
+                offset += 4;
+            } else {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
-bool ElectinsIoT::publish(const char* topic, int value, bool retain) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%d", value);
-    return publish(topic, buf, retain, QOS0);
+#if defined(ESP32)
+static void electinsTask(void* pvParameters) {
+    ElectinsIoT* iot = (ElectinsIoT*)pvParameters;
+    while (true) {
+        iot->loop();
+        vTaskDelay(1); // Jeda 1 tick (1ms) untuk respons tercepat, tetap memberi ruang bagi OS/WiFi task
+    }
+}
+#endif
+
+#if defined(ESP8266)
+static Ticker otaLoopTicker;
+static void onTickerLoop(ElectinsIoT* iot) {
+    iot->loop();
+}
+#endif
+
+ElectinsIoT::ElectinsIoT(Client& client) : _client(client) {
+    _otaInProgress = false;
+    startBatch();
+    _cacheDoubleCount = 0;
+    _cacheStringCount = 0;
+#if defined(ESP32)
+    _mutex = xSemaphoreCreateMutex();
+#endif
 }
 
-bool ElectinsIoT::publish(const char* topic, float value,
-                           uint8_t decimals, bool retain) {
-    char buf[24];
-    dtostrf(value, 1, decimals, buf);
-    return publish(topic, buf, retain, QOS0);
+ElectinsIoT::~ElectinsIoT() {
+#if defined(ESP32)
+    if (_mutex) {
+        vSemaphoreDelete((SemaphoreHandle_t)_mutex);
+        _mutex = nullptr;
+    }
+#endif
 }
 
-bool ElectinsIoT::publish(const char* topic, bool value, bool retain) {
-    return publish(topic, value ? "true" : "false", retain, QOS0);
+void ElectinsIoT::lock() {
+#if defined(ESP32)
+    if (_mutex) {
+        xSemaphoreTake((SemaphoreHandle_t)_mutex, portMAX_DELAY);
+    }
+#endif
 }
 
-ElectinsIoT& ElectinsIoT::operator<<(const char* topicPayload) {
-    if (!topicPayload) return *this;
-    char tmp[256];
-    strncpy(tmp, topicPayload, sizeof(tmp) - 1);
-    tmp[sizeof(tmp) - 1] = '\0';
-    char* sep = strchr(tmp, ':');
-    if (sep) { *sep = '\0'; publish(tmp, sep + 1); }
-    return *this;
+void ElectinsIoT::unlock() {
+#if defined(ESP32)
+    if (_mutex) {
+        xSemaphoreGive((SemaphoreHandle_t)_mutex);
+    }
+#endif
 }
 
-// ─── Message dispatch ─────────────────────────────────────────────────────────
+void ElectinsIoT::begin(const char* apiKey, const char* version, const char* deviceId) {
+    lock();
+    _apiKey = apiKey;
+    
+    if (version && version[0] != '\0') {
+        strncpy(_version, version, sizeof(_version) - 1);
+        _version[sizeof(_version) - 1] = '\0';
+    } else {
+        strcpy(_version, "1.0.0");
+    }
+    
+    if (!deviceId || deviceId[0] == '\0') {
+        uint8_t mac[6];
+        WiFi.macAddress(mac);
+        snprintf(_deviceId, sizeof(_deviceId), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    } else {
+        strncpy(_deviceId, deviceId, sizeof(_deviceId) - 1);
+        _deviceId[sizeof(_deviceId) - 1] = '\0';
+    }
+    _appValidated = false;
+    unlock();
+}
 
-void ElectinsIoT::_dispatchMessage(const char* topic, const char* payload,
-                                    size_t len) {
-    for (uint8_t i = 0; i < _subCount; i++) {
-        if (!_subs[i].active) continue;
-        if (!_topicMatches(_subs[i].topic, topic)) continue;
+void ElectinsIoT::beginWiFi(const char* apiKey, const char* ssid, const char* pass, 
+                           const char* version, bool useSsl, const char* deviceId) {
+    _ssid = ssid;
+    _pass = pass;
+    
+    // Atur port default jika masih mengarah ke server produksi awan
+    if (strcmp(_host, "iot.electins.id") == 0) {
+        _port = useSsl ? 8883 : 8888;
+    }
 
-        if (_subs[i].paramCallback) {
-            MqttParam param(payload, len);
-            _subs[i].paramCallback(param);
-        } else if (_subs[i].rawCallback) {
-            _subs[i].rawCallback(payload, len);
-        } else if (_subs[i].jsonInvoke && _subs[i].jsonUserCb) {
-            // Trampoline (header-only) men-deserialize lalu memanggil callback JSON.
-            _subs[i].jsonInvoke(_subs[i].jsonUserCb, topic, payload, len);
+    begin(apiKey, version, deviceId);
+
+    _log("[WiFi] Configured automatic background network loop.");
+
+#if defined(ESP32)
+    // Jalankan task latar belakang pada Core 1
+    xTaskCreatePinnedToCore(electinsTask, "ElectinsTask", 4096, this, 1, NULL, 1);
+#elif defined(ESP8266)
+    // Jalankan ticker asinkron setiap 20ms
+    otaLoopTicker.attach_ms(20, onTickerLoop, this);
+#endif
+}
+
+void ElectinsIoT::setLocalServer(const char* host, uint16_t port) {
+    lock();
+    _host = host;
+    _port = port;
+    unlock();
+}
+
+bool ElectinsIoT::connect(const char* host, uint16_t port) {
+    lock();
+    if (host != nullptr && host[0] != '\0') {
+        _host = host;
+    }
+    if (port != 0) {
+        _port = port;
+    }
+    const char* targetHost = _host;
+    uint16_t targetPort = _port;
+    _log("[TCP] Connecting to host: ", targetHost);
+    
+    _client.stop(); // Bersihkan koneksi usang
+    unlock(); // Lepas lock sebelum melakukan pemanggilan socket connect yang bersifat blocking
+
+    bool success = _client.connect(targetHost, targetPort);
+    
+    lock();
+    if (success) {
+        _lenBytesRead = 0;
+        _rxMsgLen = 0;
+        _rxMsgRead = 0;
+        _lastPingTime = millis();
+        _connectTime = millis(); // Catat waktu koneksi untuk settling period
+        _log("[TCP] Connection successful");
+        
+        // Kirim ping autentikasi awal secara instan agar server langsung memetakan device ID
+        sendPing();
+        
+        unlock();
+        return true;
+    }
+    _log("[TCP] Connection failed");
+    unlock();
+    return false;
+}
+
+bool ElectinsIoT::connected() {
+    lock();
+    if (_otaInProgress) {
+        unlock();
+        return false;
+    }
+    bool conn = _client.connected();
+    unlock();
+    return conn;
+}
+
+void ElectinsIoT::disconnect() {
+    lock();
+    _log("[TCP] Manual disconnect executed");
+    _client.stop();
+    unlock();
+}
+
+void ElectinsIoT::loop() {
+    lock();
+    if (_otaInProgress) {
+        unlock();
+        return;
+    }
+    unlock();
+
+    // ─── Otomatisasi WiFi dan TCP Reconnection ─────────────────────────────
+    if (_ssid != nullptr && _ssid[0] != '\0') {
+        if (WiFi.status() != WL_CONNECTED) {
+            lock();
+            _client.stop(); // Pastikan soket ditutup jika WiFi putus
+            unlock();
+            
+            unsigned long now = millis();
+            if (_lastWifiAttempt == 0 || now - _lastWifiAttempt > 10000) {
+                _lastWifiAttempt = now;
+                _log("[WiFi] Connecting to SSID: ", _ssid);
+                WiFi.begin(_ssid, _pass);
+            }
+            return; // Tunggu sampai WiFi terhubung sebelum melanjutkan loop
+        }
+        
+        // WiFi sudah terhubung, cek koneksi TCP
+        lock();
+        bool isTcpConnected = _client.connected();
+        unlock();
+        
+        if (!isTcpConnected) {
+            unsigned long now = millis();
+            if (_lastTcpAttempt == 0 || now - _lastTcpAttempt > 5000) {
+                _lastTcpAttempt = now;
+                _log("[TCP] Connecting to server: ", _host);
+                connect(_host, _port);
+            }
+            return; // Tunggu koneksi TCP terbentuk
         }
     }
 
-    if (_messageCb) _messageCb(topic, payload, len);
-}
+    lock();
+    if (!_client.connected()) {
+        unlock();
+        return;
+    }
 
-// ─── Topic wildcard matching ──────────────────────────────────────────────────
+    // Send keepalive ping periodically (default 8s)
+    if (millis() - _lastPingTime > _pingIntervalMs) {
+        sendPing();
+    }
 
-bool ElectinsIoT::_topicMatches(const char* filter, const char* topic) const {
-    if (!filter || !topic) return false;
-    const char* f = filter;
-    const char* t = topic;
-    while (*f && *t) {
-        if (*f == '#') return true;
-        if (*f == '+') {
-            while (*t && *t != '/') t++;
-            f++;
+    // Read socket
+    while (_client.available() > 0) {
+        if (_lenBytesRead < 4) {
+            int b = _client.read();
+            if (b < 0) break;
+            _lenBuf[_lenBytesRead++] = (uint8_t)b;
+            if (_lenBytesRead == 4) {
+                _rxMsgLen = ((uint32_t)_lenBuf[0] << 24) |
+                            ((uint32_t)_lenBuf[1] << 16) |
+                            ((uint32_t)_lenBuf[2] << 8)  |
+                             (uint32_t)_lenBuf[3];
+                _rxMsgRead = 0;
+                
+                if (_rxMsgLen > sizeof(_rxBuffer)) {
+                    _log("[TCP] Message too large: ", String(_rxMsgLen).c_str());
+                    _client.stop();
+                    _lenBytesRead = 0;
+                    _rxMsgLen = 0;
+                    _rxMsgRead = 0;
+                    unlock();
+                    return;
+                }
+                
+                if (_rxMsgLen == 0) {
+                    unlock(); // Lepas lock sebelum memanggil callback/pemrosesan
+                    handleIncomingFrame(_rxBuffer, 0);
+                    lock(); // Kunci kembali
+                    _lenBytesRead = 0;
+                    _rxMsgLen = 0;
+                    _rxMsgRead = 0;
+                    continue;
+                }
+            }
             continue;
         }
-        if (*f != *t) return false;
-        f++; t++;
+
+        size_t toRead = _rxMsgLen - _rxMsgRead;
+        if (toRead > 0) {
+            int readBytes = _client.read(&_rxBuffer[_rxMsgRead], toRead);
+            if (readBytes <= 0) break;
+            _rxMsgRead += readBytes;
+            
+            if (_rxMsgRead == _rxMsgLen) {
+                unlock(); // Lepas lock sebelum memanggil callback/pemrosesan
+                handleIncomingFrame(_rxBuffer, _rxMsgLen);
+                lock(); // Kunci kembali
+                _lenBytesRead = 0;
+                _rxMsgLen = 0;
+                _rxMsgRead = 0;
+            }
+        }
     }
-    if (*f == '#') return true;
-    return (*f == '\0' && *t == '\0');
+    unlock();
 }
 
-// ─── Debug log ────────────────────────────────────────────────────────────────
+bool ElectinsIoT::writeFrame(const uint8_t* pbData, size_t pbSize) {
+    if (!_client.connected()) return false;
 
-void ElectinsIoT::_log(const char* msg) const {
-    if (_debug) Serial.println(msg);
+    // Write 4-byte big-endian header
+    uint8_t header[4];
+    header[0] = (pbSize >> 24) & 0xFF;
+    header[1] = (pbSize >> 16) & 0xFF;
+    header[2] = (pbSize >> 8) & 0xFF;
+    header[3] = pbSize & 0xFF;
+
+    _client.write(header, 4);
+    _client.write(pbData, pbSize);
+    return true;
 }
 
-void ElectinsIoT::_log(const char* msg, const char* val) const {
-    if (_debug) { Serial.print(msg); Serial.println(val); }
+void ElectinsIoT::handleIncomingFrame(const uint8_t* pbData, size_t pbSize) {
+    DecodedCommand cmd;
+    if (decodeCommand(pbData, pbSize, cmd)) {
+        if (cmd.type == 0) { // PING
+            _log("[TCP] Received PING keepalive");
+        } 
+        else if (cmd.type == 1) { // UPDATE_PARAM
+            _log("[CMD] Received UPDATE_PARAM for: ", cmd.target_param);
+            updateCacheDouble(cmd.target_param, cmd.value);
+            updateCacheString(cmd.target_param, cmd.string_value);
+            
+            // Settling period: Dalam 500ms pertama setelah koneksi TCP terbentuk,
+            // hanya update cache tanpa memicu callback pengguna.
+            // Ini mencegah ledakan perintah lama (stale command burst) dari server
+            // yang menyebabkan relay berkedip cepat setelah OTA/reconnect.
+            bool isSettling = (_connectTime > 0 && millis() - _connectTime < 500);
+            
+            if (_updateParamCb && !isSettling) {
+                _updateParamCb(cmd.target_param, cmd.value, cmd.string_value);
+            } else if (isSettling) {
+                _log("[CMD] Settling period active, callback skipped (cache updated)");
+            }
+        } 
+        else if (cmd.type == 2) { // REBOOT
+            _log("[CMD] Received REBOOT command");
+            if (_rebootCb) {
+                _rebootCb();
+            }
+            _client.stop();
+            delay(100);
+            ESP.restart();
+        } 
+        else if (cmd.type == 3) { // OTA_UPDATE
+            _log("[CMD] Received OTA_UPDATE command: ", cmd.metadata);
+            if (_otaUpdateCb) {
+                _otaUpdateCb(cmd.metadata);
+            }
+            performOtaUpdate(cmd.metadata);
+        }
+    } else {
+        _log("[TCP] Protobuf command decode failed");
+    }
+}
+
+void ElectinsIoT::sendPing() {
+    _lastPingTime = millis();
+    const char* sKeys[1] = { "fw_version" };
+    const char* sVals[1] = { _version };
+    _sendTelemetry(nullptr, nullptr, 0, sKeys, sVals, 1);
+    _log("[TCP] Sent keepalive ping with fw_version: ", _version);
+}
+
+bool ElectinsIoT::sendTelemetry(const char* param, double value) {
+    lock();
+    if (!param) { unlock(); return false; }
+    const char* dKeys[1] = { param };
+    double dVals[1] = { value };
+    bool ok = _sendTelemetry(dKeys, dVals, 1, nullptr, nullptr, 0);
+    if (ok) _log("[Telemetry] Sent parameter: ", param);
+    unlock();
+    return ok;
+}
+
+bool ElectinsIoT::sendTelemetryString(const char* param, const char* value) {
+    lock();
+    if (!param || !value) { unlock(); return false; }
+    const char* sKeys[1] = { param };
+    const char* sVals[1] = { value };
+    bool ok = _sendTelemetry(nullptr, nullptr, 0, sKeys, sVals, 1);
+    if (ok) _log("[Telemetry] Sent string parameter: ", param);
+    unlock();
+    return ok;
+}
+
+void ElectinsIoT::startBatch() {
+    _batchDoubleCount = 0;
+    _batchStringCount = 0;
+}
+
+void ElectinsIoT::addBatch(const char* param, double value) {
+    if (!param || _batchDoubleCount >= ELECTINS_MAX_BATCH) return;
+    
+    strncpy(_batchDoubleKeys[_batchDoubleCount], param, sizeof(_batchDoubleKeys[0]) - 1);
+    _batchDoubleKeys[_batchDoubleCount][sizeof(_batchDoubleKeys[0]) - 1] = '\0';
+    _batchDoubleVals[_batchDoubleCount] = value;
+    _batchDoubleCount++;
+}
+
+void ElectinsIoT::addBatchString(const char* param, const char* value) {
+    if (!param || !value || _batchStringCount >= ELECTINS_MAX_BATCH) return;
+    
+    strncpy(_batchStringKeys[_batchStringCount], param, sizeof(_batchStringKeys[0]) - 1);
+    _batchStringKeys[_batchStringCount][sizeof(_batchStringKeys[0]) - 1] = '\0';
+    strncpy(_batchStringVals[_batchStringCount], value, sizeof(_batchStringVals[0]) - 1);
+    _batchStringVals[_batchStringCount][sizeof(_batchStringVals[0]) - 1] = '\0';
+    _batchStringCount++;
+}
+
+bool ElectinsIoT::sendBatch() {
+    lock();
+    const char* doubleKeys[ELECTINS_MAX_BATCH];
+    for (uint8_t i = 0; i < _batchDoubleCount; i++) {
+        doubleKeys[i] = _batchDoubleKeys[i];
+    }
+    const char* stringKeys[ELECTINS_MAX_BATCH];
+    const char* stringVals[ELECTINS_MAX_BATCH];
+    for (uint8_t i = 0; i < _batchStringCount; i++) {
+        stringKeys[i] = _batchStringKeys[i];
+        stringVals[i] = _batchStringVals[i];
+    }
+    
+    bool ok = _sendTelemetry(doubleKeys, _batchDoubleVals, _batchDoubleCount, 
+                             stringKeys, stringVals, _batchStringCount);
+    
+    if (ok) {
+        _log("[Telemetry] Sent batch data package");
+    }
+    startBatch(); // Reset batch after send
+    unlock();
+    return ok;
+}
+
+void ElectinsIoT::onUpdateParam(UpdateParamCallback cb) { _updateParamCb = cb; }
+void ElectinsIoT::onOtaUpdate(OtaUpdateCallback cb)     { _otaUpdateCb     = cb; }
+void ElectinsIoT::onReboot(RebootCallback cb)           { _rebootCb        = cb; }
+
+void ElectinsIoT::setDebug(bool enable) {
+    _debug = enable;
+}
+
+void ElectinsIoT::setKeepAlive(uint16_t seconds) {
+    _pingIntervalMs = seconds > 0 ? (unsigned long)seconds * 1000UL : 8000UL;
+}
+
+bool ElectinsIoT::_sendTelemetry(const char* const* doubleKeys, const double* doubleVals, size_t doubleCount,
+                                 const char* const* stringKeys, const char* const* stringVals, size_t stringCount) {
+    if (_otaInProgress) return false;
+    if (!_client.connected()) return false;
+    
+    size_t offset = 0;
+
+    // api_key (field 1)
+    if (_apiKey && _apiKey[0] != '\0') {
+        _txBuffer[offset++] = 0x0A;
+        size_t len = strlen(_apiKey);
+        offset += writeVarint(_txBuffer + offset, len);
+        memcpy(_txBuffer + offset, _apiKey, len);
+        offset += len;
+    }
+
+    // device_id (field 2)
+    if (_deviceId && _deviceId[0] != '\0') {
+        _txBuffer[offset++] = 0x12;
+        size_t len = strlen(_deviceId);
+        offset += writeVarint(_txBuffer + offset, len);
+        memcpy(_txBuffer + offset, _deviceId, len);
+        offset += len;
+    }
+
+    // parameters (field 4) - map<string, double>
+    for (size_t i = 0; i < doubleCount; i++) {
+        if (!doubleKeys[i]) continue;
+        
+        size_t keyLen = strlen(doubleKeys[i]);
+        uint8_t keyVarintBuf[10];
+        size_t keyVarintLen = writeVarint(keyVarintBuf, keyLen);
+        
+        size_t entryLen = 1 + keyVarintLen + keyLen + 1 + 8;
+        
+        if (offset + 1 + 10 + entryLen > sizeof(_txBuffer)) break; // Overflow protection
+        
+        _txBuffer[offset++] = 0x22;
+        offset += writeVarint(_txBuffer + offset, entryLen);
+        
+        _txBuffer[offset++] = 0x0A;
+        memcpy(_txBuffer + offset, keyVarintBuf, keyVarintLen);
+        offset += keyVarintLen;
+        memcpy(_txBuffer + offset, doubleKeys[i], keyLen);
+        offset += keyLen;
+        
+        _txBuffer[offset++] = 0x11;
+        double val = doubleVals[i];
+        memcpy(_txBuffer + offset, &val, 8);
+        offset += 8;
+    }
+
+    // string_parameters (field 5) - map<string, string>
+    for (size_t i = 0; i < stringCount; i++) {
+        if (!stringKeys[i] || !stringVals[i]) continue;
+        
+        size_t keyLen = strlen(stringKeys[i]);
+        uint8_t keyVarintBuf[10];
+        size_t keyVarintLen = writeVarint(keyVarintBuf, keyLen);
+        
+        size_t valLen = strlen(stringVals[i]);
+        uint8_t valVarintBuf[10];
+        size_t valVarintLen = writeVarint(valVarintBuf, valLen);
+        
+        size_t entryLen = 1 + keyVarintLen + keyLen + 1 + valVarintLen + valLen;
+        
+        if (offset + 1 + 10 + entryLen > sizeof(_txBuffer)) break; // Overflow protection
+        
+        _txBuffer[offset++] = 0x2A;
+        offset += writeVarint(_txBuffer + offset, entryLen);
+        
+        _txBuffer[offset++] = 0x0A;
+        memcpy(_txBuffer + offset, keyVarintBuf, keyVarintLen);
+        offset += keyVarintLen;
+        memcpy(_txBuffer + offset, stringKeys[i], keyLen);
+        offset += keyLen;
+        
+        _txBuffer[offset++] = 0x12;
+        memcpy(_txBuffer + offset, valVarintBuf, valVarintLen);
+        offset += valVarintLen;
+        memcpy(_txBuffer + offset, stringVals[i], valLen);
+        offset += valLen;
+    }
+
+    bool success = writeFrame(_txBuffer, offset);
+    if (success) {
+#if defined(ESP32)
+        if (!_appValidated) {
+            _appValidated = true;
+            esp_ota_mark_app_valid_cancel_rollback();
+            _log("[OTA] App marked as valid, rollback cancelled.");
+        }
+#endif
+    }
+    return success;
+}
+
+void ElectinsIoT::_log(const char* msg, const char* val) {
+    if (_debug) {
+        if (val) {
+            Serial.print(msg);
+            Serial.println(val);
+        } else {
+            Serial.println(msg);
+        }
+    }
+}
+
+void ElectinsIoT::performOtaUpdate(const char* firmwareUrl) {
+    lock();
+    _otaInProgress = true;
+    _client.stop(); // Putus koneksi utama agar bandwidth dan CPU 100% fokus ke OTA
+    unlock();
+
+    _log("[OTA] Starting internal firmware update from: ", firmwareUrl);
+    
+#if defined(ESP32)
+    HTTPClient http;
+    if (http.begin(firmwareUrl)) {
+        http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+        
+        int httpCode = http.GET();
+        if (httpCode == HTTP_CODE_OK) {
+            int contentLength = http.getSize();
+            _log("[OTA] Content size to download: ", String(contentLength).c_str());
+            
+            if (contentLength <= 0) {
+                _log("[OTA] Invalid content length, aborting OTA.");
+                http.end();
+                lock();
+                _otaInProgress = false;
+                unlock();
+                return;
+            }
+            
+            if (Update.begin(contentLength)) {
+                _log("[OTA] Flashing in progress...");
+                Stream* stream = http.getStreamPtr();
+                size_t written = Update.writeStream(*stream);
+                
+                if (written == contentLength) {
+                    _log("[OTA] Binary written successfully to partition.");
+                } else {
+                    _log("[OTA] Flashing failed. Bytes written: ", String(written).c_str());
+                }
+                
+                if (Update.end()) {
+                    if (Update.isFinished()) {
+                        _log("[OTA] Update successful! Rebooting ESP32...");
+                        _client.stop();
+                        delay(500);
+                        ESP.restart();
+                    } else {
+                        _log("[OTA] Update finished but not marked as completed.");
+                    }
+                } else {
+                    _log("[OTA] Update finalization failed. Error: ", Update.errorString());
+                }
+            } else {
+                _log("[OTA] Not enough partition space for flashing. Error: ", Update.errorString());
+            }
+        } else {
+            _log("[OTA] HTTP GET failed, response code: ", String(httpCode).c_str());
+        }
+        http.end();
+    } else {
+        _log("[OTA] Failed to initialize HTTP client connection.");
+    }
+#elif defined(ESP8266)
+    WiFiClient otaClient;
+    t_httpUpdate_return ret = ESP8266httpUpdate.update(otaClient, firmwareUrl);
+    switch (ret) {
+        case HTTP_UPDATE_FAILED:
+            _log("[OTA] Update failed, error: ", ESP8266httpUpdate.getLastErrorString().c_str());
+            break;
+        case HTTP_UPDATE_NO_UPDATES:
+            _log("[OTA] No updates available.");
+            break;
+        case HTTP_UPDATE_OK:
+            _log("[OTA] Update successful!");
+            break;
+    }
+#endif
+
+    // Reset jika proses OTA gagal/tidak melakukan restart
+    lock();
+    _otaInProgress = false;
+    unlock();
+}
+
+double ElectinsIoT::getDouble(const char* param, double defaultValue) {
+    if (param == nullptr || param[0] == '\0') return defaultValue;
+    lock();
+    for (uint8_t i = 0; i < _cacheDoubleCount; i++) {
+        if (strcmp(_cacheDoubleKeys[i], param) == 0) {
+            double val = _cacheDoubleVals[i];
+            unlock();
+            return val;
+        }
+    }
+    unlock();
+    return defaultValue;
+}
+
+const char* ElectinsIoT::getString(const char* param, const char* defaultValue) {
+    if (param == nullptr || param[0] == '\0') return defaultValue;
+    lock();
+    for (uint8_t i = 0; i < _cacheStringCount; i++) {
+        if (strcmp(_cacheStringKeys[i], param) == 0) {
+            strncpy(_getStringBuf, _cacheStringVals[i], sizeof(_getStringBuf) - 1);
+            _getStringBuf[sizeof(_getStringBuf) - 1] = '\0';
+            unlock();
+            return _getStringBuf;
+        }
+    }
+    unlock();
+    return defaultValue;
+}
+
+void ElectinsIoT::updateCacheDouble(const char* key, double val) {
+    lock();
+
+    for (uint8_t i = 0; i < _cacheDoubleCount; i++) {
+        if (strcmp(_cacheDoubleKeys[i], key) == 0) {
+            _cacheDoubleVals[i] = val;
+            unlock();
+            return;
+        }
+    }
+
+    if (_cacheDoubleCount < ELECTINS_MAX_BATCH) {
+        strncpy(_cacheDoubleKeys[_cacheDoubleCount], key, sizeof(_cacheDoubleKeys[0]) - 1);
+        _cacheDoubleKeys[_cacheDoubleCount][sizeof(_cacheDoubleKeys[0]) - 1] = '\0';
+        _cacheDoubleVals[_cacheDoubleCount] = val;
+        _cacheDoubleCount++;
+    }
+    unlock();
+}
+
+void ElectinsIoT::updateCacheString(const char* key, const char* val) {
+    lock();
+    for (uint8_t i = 0; i < _cacheStringCount; i++) {
+        if (strcmp(_cacheStringKeys[i], key) == 0) {
+            strncpy(_cacheStringVals[i], val, sizeof(_cacheStringVals[0]) - 1);
+            _cacheStringVals[i][sizeof(_cacheStringVals[0]) - 1] = '\0';
+            unlock();
+            return;
+        }
+    }
+    if (_cacheStringCount < ELECTINS_MAX_BATCH) {
+        strncpy(_cacheStringKeys[_cacheStringCount], key, sizeof(_cacheStringKeys[0]) - 1);
+        _cacheStringKeys[_cacheStringCount][sizeof(_cacheStringKeys[0]) - 1] = '\0';
+        strncpy(_cacheStringVals[_cacheStringCount], val, sizeof(_cacheStringVals[0]) - 1);
+        _cacheStringVals[_cacheStringCount][sizeof(_cacheStringVals[0]) - 1] = '\0';
+        _cacheStringCount++;
+    }
+    unlock();
+}
+
+bool ElectinsIoT::getBool(const char* param, bool defaultValue) {
+    if (param == nullptr || param[0] == '\0') return defaultValue;
+    lock();
+    // Cari di cache double dulu
+    for (uint8_t i = 0; i < _cacheDoubleCount; i++) {
+        if (strcmp(_cacheDoubleKeys[i], param) == 0) {
+            double val = _cacheDoubleVals[i];
+            unlock();
+            return val > 0.5;
+        }
+    }
+
+    for (uint8_t i = 0; i < _cacheStringCount; i++) {
+        if (strcmp(_cacheStringKeys[i], param) == 0) {
+            const char* val = _cacheStringVals[i];
+            bool res = defaultValue;
+            if (strcmp(val, "true") == 0 || strcmp(val, "1") == 0) {
+                res = true;
+            } else if (strcmp(val, "false") == 0 || strcmp(val, "0") == 0) {
+                res = false;
+            }
+            unlock();
+            return res;
+        }
+    }
+    unlock();
+    return defaultValue;
+}
+
+bool ElectinsIoT::sendTelemetryBool(const char* param, bool value) {
+    return sendTelemetry(param, value ? 1.0 : 0.0);
+}
+
+void ElectinsIoT::addBatchBool(const char* param, bool value) {
+    addBatch(param, value ? 1.0 : 0.0);
 }

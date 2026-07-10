@@ -1,79 +1,72 @@
 /**
- * SecureIoT.ino — ElectinsIoT v2.1.4 MQTT over TLS (port 8883)
+ * SecureIoT.ino — ElectinsIoT v3.0.0
  * ──────────────────────────────────────────────────────────
- * Koneksi MQTT terenkripsi TLS menggunakan WiFiClientSecure
- * Konfigurasi TLS HARUS dilakukan SEBELUM mqtt.begin().
- * Dependensi: built-in SDK ESP32/ESP8266
+ * Contoh dasar penggunaan koneksi aman terenkripsi (SSL/TLS)
+ * untuk mengontrol lampu dan mengirim data tekanan.
  */
 
 #include <ElectinsIoT.h>
+#include <WiFiClientSecure.h>
 
-// ─── Konfigurasi ──────────────────────────────────────────────────────────────
-const char*    WIFI_SSID    = "WIFI_SSID";
-const char*    WIFI_PASS    = "WIFI_PASSWORD";
-const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";   
-const char*    MQTT_PASS    = "PASSWORD";
-const char*    USER_PREFIX  = "ID-XXXXXXXX";   
-const char*    PROJECT_SLUG = "project-slug";
-const uint16_t MQTT_PORT    = 8883; // Port MQTT over TLS
+// ─── Kredensial WiFi, API Key, & Versi Firmware ──────────────────────────────
+const char* WIFI_SSID    = "YOUR_WIFI_SSID";
+const char* WIFI_PASS    = "YOUR_WIFI_PASSWORD";
+const char* API_KEY      = "YOUR_API_KEY";
+const char* FIRMWARE_VER = "1.0.0";
 
-// ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_CMD  = "ID-XXXXXXXX/project-slug/cmd";
-const char* TOPIC_TEMP = "ID-XXXXXXXX/project-slug/temp";
+// Sertifikat Root CA Let's Encrypt (PEM) untuk iot.electins.id
+const char* ROOT_CA_CERT = \
+"-----BEGIN CERTIFICATE-----\n" \
+"MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPGu2OC+XYwDQYJKoZIhvcNAQELBQAw\n" \
+"TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh\n" \
+"cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4\n" \
+"WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu\n" \
+"ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY\n" \
+"MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJzwa3fNWk5BIZOIO\n" \
+"担当者v5GvFK1TUKcgJMcJ+KGn3H4C2O9C7vN7WwQ+7bM6z2H0GCIH0Z715e7uH7\n" \
+"......\n" \
+"-----END CERTIFICATE-----\n";
 
-ElectinsIoT mqtt;
+// ─── Parameter Global (Nama Widget Dashboard) ────────────────────────────────
+const char* PARAM_LAMPU     = "lampu";
+const char* PARAM_TEKANAN   = "tekanan";
 
-// ─── Callbacks ────────────────────────────────────────────────────────────────
-void onCmd(MqttParam& param) {
-    Serial.printf("[CMD] %s\n", param.asStr());
-}
+// ─── Instansiasi Soket TLS Aman & ElectinsIoT ────────────────────────────────
+WiFiClientSecure secureClient;
+ElectinsIoT iot(secureClient);
 
-void onMqttConnected() {
-    Serial.println("[MQTT] Koneksi TLS berhasil!");
-    Serial.printf("[MQTT] Topik $status: %s\n", mqtt.statusTopic());
-    mqtt.subscribe(TOPIC_CMD, onCmd, QOS1);
-}
-
-void onMqttDisconnected() {
-    Serial.println("[MQTT] Terputus.");
-}
-
-void onMessage(const char* topic, const char* payload, size_t length) {
-    Serial.printf("[MQTT] %s => %.*s\n", topic, (int)length, payload);
-}
-
-// ─── Setup ────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n[ElectinsIoT] SecureIoT v2");
+    delay(1000);
+    Serial.println("\n[ElectinsIoT] SecureIoT v3.0.0 (TLS)");
 
-    mqtt.setDebug(true);
-    mqtt.onConnect(onMqttConnected);
-    mqtt.onDisconnect(onMqttDisconnected);
-    mqtt.onMessage(onMessage);
+    // ── Konfigurasi TLS Aman pada Klien Soket ────────────────────────────────
+#if defined(ESP32)
+    secureClient.setCACert(ROOT_CA_CERT);
+#elif defined(ESP8266)
+    secureClient.setTrustAnchors(new BearSSL::X509List(ROOT_CA_CERT));
+#endif
 
-    // ── Aktifkan TLS — HARUS sebelum begin() ────────────────────────────────
-    mqtt.setSecure(true);
+    // Aktifkan log debug
+    iot.setDebug(true);
 
-    // Pilih salah satu:
-    // skip verifikasi sertifikat (development / self-signed)
-    mqtt.setInsecure(true);
-
-    mqtt.begin(
-        WIFI_SSID,   WIFI_PASS,
-        MQTT_HOST,   MQTT_PORT,
-        "DeviceID-Secure",
-        MQTT_USER,   MQTT_PASS,
-        USER_PREFIX, PROJECT_SLUG
-    );
+    // Mulai inisialisasi otomatis Wi-Fi & TCP Server port aman 8883 (TLS).
+    // Parameter kelima (true) mengaktifkan SSL/TLS otomatis pada port 8883.
+    iot.beginWiFi(API_KEY, WIFI_SSID, WIFI_PASS, FIRMWARE_VER, true);
 }
 
-// ─── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
-    static uint32_t last = 0;
-    if (millis() - last >= 10000) {
-        last = millis();
-        mqtt.publish(TOPIC_TEMP, 25.0f + random(0, 50) / 10.0f);
+    // 1. MEMBACA PARAMETER (GET) - Polling nilai "lampu" dari cache lokal (default: 0.0)
+    double lampuState = iot.getDouble(PARAM_LAMPU, 0.0);
+    
+    // 2. TELEMETRI SENSOR (SET) - Mengirim data tekanan setiap 10 detik
+    static unsigned long lastSend = 0;
+    if (millis() - lastSend >= 10000) {
+        lastSend = millis();
+        if (iot.connected()) {
+            float pressure = 10.0f + random(0, 100) / 10.0f;
+            iot.sendTelemetry(PARAM_TEKANAN, pressure);
+            Serial.printf("[Sensor] Tekanan: %.1f Pa | Status Lampu: %s\n", pressure, lampuState > 0.5 ? "ON" : "OFF");
+        }
     }
 }

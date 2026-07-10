@@ -1,86 +1,76 @@
 /**
- * RelayDHT.ino — ElectinsIoT v2.1.4 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v3.0.0 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
- * Kontrol relay via MQTT dan kirim data sensor DHT11/DHT22.
+ * Kontrol relay dan kirim data sensor DHT11/DHT22 secara otomatis latar belakang.
+ * Pustaka otomatis mengurus Wi-Fi, TCP, heartbeat ping, & OTA update.
  *
  * Dependensi: DHT sensor library by Adafruit
- * TCP/MQTT: built-in SDK ESP32/ESP8266
  */
 
 #include <ElectinsIoT.h>
 #include <DHT.h>
 
-// ─── Konfigurasi ──────────────────────────────────────────────────────────────
-const char*    WIFI_SSID    = "WIFI_SSID";
-const char*    WIFI_PASS    = "WIFI_PASSWORD";
-const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";
-const char*    MQTT_PASS    = "PASSWORD";
-const char*    USER_PREFIX  = "ID-XXXXXXXX"; 
-const char*    PROJECT_SLUG = "project-slug";
-const uint16_t MQTT_PORT    = 1883;
+// ─── Kredensial WiFi, API Key, & Versi Firmware ──────────────────────────────
+const char* WIFI_SSID    = "YOUR_WIFI_SSID";
+const char* WIFI_PASS    = "YOUR_WIFI_PASSWORD";
+const char* API_KEY      = "YOUR_API_KEY";
+const char* FIRMWARE_VER = "1.0.0";
 
-// ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_TEMP        = "ID-XXXXXXXX/project-slug/temp";
-const char* TOPIC_HUMIDITY    = "ID-XXXXXXXX/project-slug/humd";
-const char* TOPIC_RELAY       = "ID-XXXXXXXX/project-slug/relay";
-const char* TOPIC_RELAY_STATE = "ID-XXXXXXXX/project-slug/relay-state";
+// ─── Parameter Global (Nama Widget Dashboard) ────────────────────────────────
+const char* PARAM_RELAY       = "relay";
+const char* PARAM_RELAY_STATE = "relay_state";
+const char* PARAM_SUHU        = "suhu";
+const char* PARAM_KELEMBAPAN  = "kelembapan";
 
-// ─── Hardware ─────────────────────────────────────────────────────────────────
+// ─── Hardware Pin ─────────────────────────────────────────────────────────────
 #define PIN_DHT   5
 #define PIN_RELAY 2
 DHT dht(PIN_DHT, DHT11);
 
-ElectinsIoT mqtt;
+// ─── Instansiasi Soket & Pustaka ─────────────────────────────────────────────
+WiFiClient client;
+ElectinsIoT iot(client);
 
-// ─── Handler relay ────────────────────────────────────────────────────────────
-void onRelay(MqttParam& param) {
-    bool on = param.asBool();
-    digitalWrite(PIN_RELAY, on ? HIGH : LOW);
-    mqtt.publish(TOPIC_RELAY_STATE, on ? "on" : "off", true /*retain*/);
-    Serial.printf("[RELAY] %s\n", on ? "ON" : "OFF");
-}
-
-// ─── Connect callback ─────────────────────────────────────────────────────────
-void onMqttConnected() {
-    mqtt.subscribe(TOPIC_RELAY, onRelay, QOS1);
-    Serial.println("[MQTT] Tersambung, relay siap dikontrol.");
-}
-
-// ─── Setup ────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
     pinMode(PIN_RELAY, OUTPUT);
     digitalWrite(PIN_RELAY, LOW);
     dht.begin();
 
-    // Mengaktifkan log internal bawaan library
-    mqtt.setDebug(true);
+    // Aktifkan log debug
+    iot.setDebug(true);
 
-    mqtt.onConnect(onMqttConnected);
-
-    Serial.printf("\nMenghubungkan ke wifi (%s)...\n", WIFI_SSID);
-
-    mqtt.begin(
-        WIFI_SSID,   WIFI_PASS,
-        MQTT_HOST,   MQTT_PORT,
-        "DeviceID-Relay",
-        MQTT_USER,   MQTT_PASS,
-        USER_PREFIX, PROJECT_SLUG
-    );
+    // Mulai inisialisasi otomatis Wi-Fi & TCP Server.
+    iot.beginWiFi(API_KEY, WIFI_SSID, WIFI_PASS, FIRMWARE_VER);
 }
 
-// ─── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
-    static uint32_t last = 0;
-    if (millis() - last >= 5000) {
-        last = millis();
+    // 1. KONTROL RELAY (GET) - Polling nilai dari server (default: 0.0/mati)
+    double relayValue = iot.getDouble(PARAM_RELAY, 0.0);
+    bool turnOn = (relayValue > 0.5);
+    if (turnOn) {
+        digitalWrite(PIN_RELAY, HIGH);
+    } else {
+        digitalWrite(PIN_RELAY, LOW);
+    }
+
+    // 2. TELEMETRI SENSOR (SET) - Kirim data suhu & kelembapan setiap 5 detik
+    static unsigned long lastSend = 0;
+    if (millis() - lastSend >= 5000) {
+        lastSend = millis();
+        
         float temp = dht.readTemperature();
         float hum  = dht.readHumidity();
-        if (!isnan(temp) && !isnan(hum)) {
-            mqtt.publish(TOPIC_TEMP,     temp, 1);
-            mqtt.publish(TOPIC_HUMIDITY, hum,  1);
-            Serial.printf("[Sensor] Temp: %.1f°C  Hum: %.1f%%\n", temp, hum);
+        
+        if (!isnan(temp) && !isnan(hum) && iot.connected()) {
+            // Gunakan batching agar terkirim dalam 1 paket hemat data
+            iot.startBatch();
+            iot.addBatch(PARAM_SUHU, temp);
+            iot.addBatch(PARAM_KELEMBAPAN, hum);
+            iot.addBatch(PARAM_RELAY_STATE, turnOn ? 1.0 : 0.0); // Laporkan status relay balik ke server
+            iot.sendBatch();
+            
+            Serial.printf("[Sensor] Suhu: %.1f°C | Kelembapan: %.1f%%\n", temp, hum);
         }
     }
 }

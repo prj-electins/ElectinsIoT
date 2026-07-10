@@ -1,110 +1,98 @@
 /**
- * JsonIoT.ino — ElectinsIoT v2.1.4 JSON Helper Example
- * ──────────────────────────────────────────────────
- * Requires: ArduinoJson by Benoit Blanchon
- *           (install via Library Manager)
- *
- * PENTING: ArduinoJson HARUS di-include SEBELUM ElectinsIoT
- *          agar JSON helper diaktifkan via preprocessor.
- *
- * Demonstrasi:
- *   - subscribeJson() : payload JSON di-parse otomatis ke JsonDocument
- *   - publishJson()   : serialize JsonDocument & publish
+ * JsonIoT.ino — ElectinsIoT v3.0.0 JSON Serialization Example
+ * ──────────────────────────────────────────────────────────
+ * Demonstrasi pengiriman data terformat JSON dan pemrosesan 
+ * konfigurasi JSON yang diterima dari server menggunakan ArduinoJson.
  *
  * Dependensi: ArduinoJson by Benoit Blanchon (install via Library Manager)
- * TCP/MQTT: built-in SDK ESP32/ESP8266 — tidak perlu install library lain
+ * TCP/Protobuf: built-in SDK ESP32/ESP8266
  */
 
-// ArduinoJson HARUS di-include SEBELUM ElectinsIoT
 #include <ArduinoJson.h>
 #include <ElectinsIoT.h>
 
-// ─── Konfigurasi ──────────────────────────────────────────────────────────────
-const char*    WIFI_SSID    = "WIFI_SSID";
-const char*    WIFI_PASS    = "WIFI_PASSWORD";
-const char*    MQTT_HOST    = "iot.electins.id";
-const char*    MQTT_USER    = "PRJ-XXXXXXXX";
-const char*    MQTT_PASS    = "PASSWORD";
-const char*    USER_PREFIX  = "ID-XXXXXXXX";
-const char*    PROJECT_SLUG = "project-slug";
-const uint16_t MQTT_PORT    = 1883;
+// ─── Konfigurasi WiFi & API Key ──────────────────────────────────────────────
+const char* WIFI_SSID   = "YOUR_WIFI_SSID";
+const char* WIFI_PASS   = "YOUR_WIFI_PASSWORD";
+const char* API_KEY     = "YOUR_API_KEY";
 
-// ─── Topik ────────────────────────────────────────────────────────────────────
-const char* TOPIC_SENSOR  = "ID-XXXXXXXX/project-slug/sensor";
-const char* TOPIC_CONFIG  = "ID-XXXXXXXX/project-slug/config";
-const char* TOPIC_COMMAND = "ID-XXXXXXXX/project-slug/command";
+// ─── Parameter Global (Dashboard Widgets) ─────────────────────────────────────
+const char* PARAM_KONFIGURASI   = "konfigurasi";
+const char* PARAM_SENSOR_LOG    = "sensor_log";
 
-ElectinsIoT mqtt;
+// ─── Instansiasi Soket & Pustaka ─────────────────────────────────────────────
+WiFiClient client;
+ElectinsIoT iot(client);
 
-// ─── JSON subscribe callbacks ─────────────────────────────────────────────────
-
-// Terima: {"interval":5000,"debug":true,"name":"sensor-01"}
-void onConfig(const char* topic, JsonDocument& doc) {
-    Serial.println("[CONFIG] Diterima:");
-    if (doc["interval"].is<int>())
-        Serial.printf("  interval = %d ms\n", (int)doc["interval"]);
-    if (doc["debug"].is<bool>())
-        mqtt.setDebug((bool)doc["debug"]);
-    if (doc["name"].is<const char*>())
-        Serial.printf("  name     = %s\n", doc["name"].as<const char*>());
-}
-
-// Terima: {"action":"restart"} atau {"action":"status"}
-void onCommand(const char* topic, JsonDocument& doc) {
-    const char* action = doc["action"] | "";
-    Serial.printf("[CMD] action = %s\n", action);
-
-    if (strcmp(action, "restart") == 0) {
-        delay(300);
-        ESP.restart();
-    }
-
-    if (strcmp(action, "status") == 0) {
-        JsonDocument reply;
-        reply["uptime"] = millis() / 1000;
-        reply["heap"]   = ESP.getFreeHeap();
-        reply["rssi"]   = WiFi.RSSI();
-        mqtt.publishJson("username/myproject/status/reply", reply);
+// ─── Callback perintah masuk ──────────────────────────────────────────────────
+// Menangani parameter 'konfigurasi' yang berisi string JSON dari server
+void onUpdateParam(const char* param, double value, const char* stringValue) {
+    if (strcmp(param, PARAM_KONFIGURASI) == 0) {
+        Serial.printf("[CONFIG] Menerima JSON untuk %s:\n", PARAM_KONFIGURASI);
+        
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, stringValue);
+        
+        if (error) {
+            Serial.print("  Gagal mendeserialisasi JSON: ");
+            Serial.println(error.c_str());
+            return;
+        }
+        
+        // Baca field dari JSON
+        int interval = doc["interval"] | 10000;
+        bool modeHemat = doc["mode_hemat"] | false;
+        
+        Serial.printf("  interval   = %d ms\n", interval);
+        Serial.printf("  mode_hemat = %s\n", modeHemat ? "aktif" : "nonaktif");
     }
 }
 
-// ─── Connect callback ─────────────────────────────────────────────────────────
-void onMqttConnected() {
-    Serial.println("[MQTT] Tersambung!");
-    Serial.printf("[MQTT] Topik $status: %s\n", mqtt.statusTopic());
-
-    mqtt.subscribeJson(TOPIC_CONFIG,  onConfig,  QOS1);
-    mqtt.subscribeJson(TOPIC_COMMAND, onCommand, QOS1);
-}
-
-// ─── Setup ────────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n[ElectinsIoT] JsonIoT v2");
+    Serial.println("\n[ElectinsIoT] JsonIoT v3 Redesign");
 
-    mqtt.onConnect(onMqttConnected);
+    // Hubungkan WiFi
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    while (WiFi.status() != WL_CONNECTED) delay(500);
+    Serial.println("WiFi Connected!");
 
-    mqtt.begin(
-        WIFI_SSID,   WIFI_PASS,
-        MQTT_HOST,   MQTT_PORT,
-        "DeviceID-JSON",
-        MQTT_USER,   MQTT_PASS,
-        USER_PREFIX, PROJECT_SLUG
-    );
+    iot.setDebug(true);
+    iot.onUpdateParam(onUpdateParam);
+
+    iot.begin(API_KEY);
+    iot.connect("iot.electins.id", 8888);
 }
 
-// ─── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
+    if (!iot.connected()) {
+        static unsigned long lastReconnect = 0;
+        if (millis() - lastReconnect > 5000) {
+            lastReconnect = millis();
+            iot.connect("iot.electins.id", 8888);
+        }
+    }
+    iot.loop();
+
     static uint32_t last = 0;
     if (millis() - last >= 10000) {
         last = millis();
 
-        JsonDocument sensor;
-        sensor["temp"]   = 25.0f + random(0, 50) / 10.0f;
-        sensor["hum"]    = 60.0f + random(0, 200) / 10.0f;
-        sensor["uptime"] = millis() / 1000;
+        if (iot.connected()) {
+            // 1. Buat object JSON
+            JsonDocument doc;
+            doc["suhu"] = 25.0f + random(0, 50) / 10.0f;
+            doc["kelembapan"] = 60.0f + random(0, 200) / 10.0f;
+            doc["uptime"] = millis() / 1000;
 
-        if (mqtt.publishJson(TOPIC_SENSOR, sensor))
-            Serial.println("[Sensor] JSON dipublish");
+            // 2. Serialisasikan ke string buffer
+            char jsonBuffer[256];
+            serializeJson(doc, jsonBuffer);
+
+            // 3. Kirim string JSON sebagai satu parameter telemetri teks
+            if (iot.sendTelemetryString(PARAM_SENSOR_LOG, jsonBuffer)) {
+                Serial.printf("[Sensor] Mengirim JSON via %s: %s\n", PARAM_SENSOR_LOG, jsonBuffer);
+            }
+        }
     }
 }
