@@ -7,39 +7,33 @@
 #######################################
 
 ElectinsIoT	KEYWORD1
-MqttParam	KEYWORD1
-MqttQoS	KEYWORD1
+UpdateParamCallback	KEYWORD1
+OtaUpdateCallback	KEYWORD1
+RebootCallback	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
 
 begin	KEYWORD2
+beginWiFi	KEYWORD2
+connect	KEYWORD2
 connected	KEYWORD2
-statusTopic	KEYWORD2
-publish	KEYWORD2
-publishJson	KEYWORD2
-subscribe	KEYWORD2
-subscribeJson	KEYWORD2
-unsubscribe	KEYWORD2
-onConnect	KEYWORD2
-onDisconnect	KEYWORD2
-onMessage	KEYWORD2
+disconnect	KEYWORD2
+loop	KEYWORD2
+getDouble	KEYWORD2
+getString	KEYWORD2
+getBool	KEYWORD2
+sendTelemetry	KEYWORD2
+sendTelemetryString	KEYWORD2
+sendTelemetryBool	KEYWORD2
+startBatch	KEYWORD2
+addBatch	KEYWORD2
+addBatchString	KEYWORD2
+addBatchBool	KEYWORD2
+sendBatch	KEYWORD2
+onUpdateParam	KEYWORD2
+onOtaUpdate	KEYWORD2
+onReboot	KEYWORD2
 setDebug	KEYWORD2
 setKeepAlive	KEYWORD2
-setReconnectInterval	KEYWORD2
-setHeartbeatInterval	KEYWORD2
-setUserPrefix	KEYWORD2
-asStr	KEYWORD2
-asInt	KEYWORD2
-asFloat	KEYWORD2
-asBool	KEYWORD2
-length	KEYWORD2
-
-#######################################
-# Constants (LITERAL1)
-#######################################
-
-QOS0	LITERAL1
-QOS1	LITERAL1
-QOS2	LITERAL1
