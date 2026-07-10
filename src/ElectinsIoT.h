@@ -29,7 +29,7 @@ public:
                    const char* version = "1.0.0", bool useSsl = false, const char* deviceId = nullptr);
 
     // Kustomisasi server lokal untuk keperluan pengujian developer internal
-    void setLocalServer(const char* host, uint16_t port = 8888);
+    void setLocalServer(const char* host, uint16_t port = 1883);
 
     // Melakukan koneksi ke TCP Server
     bool connect(const char* host = nullptr, uint16_t port = 0);
@@ -75,7 +75,7 @@ private:
     char _deviceId[64] = {0};
     char _version[16] = {0}; // Menyimpan versi firmware aktif
     const char* _host = "iot.electins.id";
-    uint16_t _port = 8888;
+    uint16_t _port = 1883;
     
     // WiFi credentials untuk otomatisasi
     const char* _ssid = nullptr;

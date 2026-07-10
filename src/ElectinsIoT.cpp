@@ -181,7 +181,7 @@ void ElectinsIoT::beginWiFi(const char* apiKey, const char* ssid, const char* pa
     
     // Atur port default jika masih mengarah ke server produksi awan
     if (strcmp(_host, "iot.electins.id") == 0) {
-        _port = useSsl ? 8883 : 8888;
+        _port = useSsl ? 8883 : 1883;
     }
 
     begin(apiKey, version, deviceId);

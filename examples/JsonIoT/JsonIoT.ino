@@ -61,7 +61,7 @@ void setup() {
     iot.onUpdateParam(onUpdateParam);
 
     iot.begin(API_KEY);
-    iot.connect("iot.electins.id", 8888);
+    iot.connect("iot.electins.id", 1883);
 }
 
 void loop() {
@@ -69,7 +69,7 @@ void loop() {
         static unsigned long lastReconnect = 0;
         if (millis() - lastReconnect > 5000) {
             lastReconnect = millis();
-            iot.connect("iot.electins.id", 8888);
+            iot.connect("iot.electins.id", 1883);
         }
     }
     iot.loop();

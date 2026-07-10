@@ -100,7 +100,7 @@ void loop() {
 
 #### Initialization & Reconnections
 - **`iot.beginWiFi(apiKey, ssid, pass, version = "1.0.0", useSsl = false, deviceId = nullptr)`**  
-  Initializes and starts the automated background connection loop. Automatically handles Wi-Fi connection, TCP connection, ping heartbeats, and OTA updates. If `useSsl` is `true`, it connects to port `8883` (requires passing a `WiFiClientSecure` instance to the constructor).
+  Initializes and starts the automated background connection loop. Automatically handles Wi-Fi connection, TCP connection, ping heartbeats, and OTA updates. If `useSsl` is `true`, it connects to port `8883` (requires passing a `WiFiClientSecure` instance to the constructor). If `useSsl` is `false`, it connects to port `1883` by default.
 - **`iot.connected()`**  
   Returns `true` if currently connected to the server.
 - **`iot.disconnect()`**  
@@ -257,7 +257,7 @@ void loop() {
 
 #### Inisialisasi & Koneksi Otomatis
 - **`iot.beginWiFi(apiKey, ssid, pass, version = "1.0.0", useSsl = false, deviceId = nullptr)`**  
-  Menginisialisasi dan memulai loop koneksi latar belakang otomatis. Menangani Wi-Fi, TCP, heartbeat, dan OTA. Jika `useSsl` diset `true`, otomatis terhubung ke port `8883` (wajib menggunakan objek `WiFiClientSecure` pada konstruktor).
+  Menginisialisasi dan memulai loop koneksi latar belakang otomatis. Menangani Wi-Fi, TCP, heartbeat, dan OTA. Jika `useSsl` diset `true`, otomatis terhubung ke port `8883` (wajib menggunakan objek `WiFiClientSecure` pada konstruktor). Jika `useSsl` diset `false`, otomatis terhubung ke port `1883` secara default.
 - **`iot.connected()`**  
   Mengembalikan nilai `true` jika terhubung ke server.
 - **`iot.disconnect()`**  
