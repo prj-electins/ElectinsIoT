@@ -82,7 +82,7 @@ private:
     const char* _pass = nullptr;
     unsigned long _lastWifiAttempt = 0;
     unsigned long _lastTcpAttempt = 0;
-    unsigned long _connectTime = 0;
+    uint8_t _lastWifiStatus = 255; // Menghindari status tak terdefinisi saat awal
 
     // Mutex untuk thread safety pada ESP32
 #if defined(ESP32)
@@ -122,6 +122,10 @@ private:
     char    _cacheStringVals[ELECTINS_MAX_BATCH][64];
     uint8_t _cacheStringCount = 0;
 
+
+    unsigned long _frameStartRef = 0;
+    unsigned long _lastRxTime = 0;
+
     bool _debug = false;
     bool _appValidated = false;
     bool _otaInProgress = false;
@@ -138,6 +142,7 @@ private:
 
     void updateCacheDouble(const char* key, double val);
     void updateCacheString(const char* key, const char* val);
+
 
     bool _sendTelemetry(const char* const* doubleKeys, const double* doubleVals, size_t doubleCount,
                         const char* const* stringKeys, const char* const* stringVals, size_t stringCount);

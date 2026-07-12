@@ -120,6 +120,8 @@ ElectinsIoT::ElectinsIoT(Client& client) : _client(client) {
     startBatch();
     _cacheDoubleCount = 0;
     _cacheStringCount = 0;
+    _frameStartRef = 0;
+    _lastRxTime = 0;
 #if defined(ESP32)
     _mutex = xSemaphoreCreateMutex();
 #endif
@@ -227,7 +229,7 @@ bool ElectinsIoT::connect(const char* host, uint16_t port) {
         _rxMsgLen = 0;
         _rxMsgRead = 0;
         _lastPingTime = millis();
-        _connectTime = millis(); // Catat waktu koneksi untuk settling period
+        _lastRxTime = millis(); // Catat waktu penerimaan awal
         _log("[TCP] Connection successful");
         
         // Kirim ping autentikasi awal secara instan agar server langsung memetakan device ID
@@ -269,7 +271,11 @@ void ElectinsIoT::loop() {
 
     // ─── Otomatisasi WiFi dan TCP Reconnection ─────────────────────────────
     if (_ssid != nullptr && _ssid[0] != '\0') {
-        if (WiFi.status() != WL_CONNECTED) {
+        uint8_t currentWifiStatus = WiFi.status();
+        bool justConnected = (currentWifiStatus == WL_CONNECTED && _lastWifiStatus != WL_CONNECTED);
+        _lastWifiStatus = currentWifiStatus;
+
+        if (currentWifiStatus != WL_CONNECTED) {
             lock();
             _client.stop(); // Pastikan soket ditutup jika WiFi putus
             unlock();
@@ -290,7 +296,8 @@ void ElectinsIoT::loop() {
         
         if (!isTcpConnected) {
             unsigned long now = millis();
-            if (_lastTcpAttempt == 0 || now - _lastTcpAttempt > 5000) {
+            // Jika WiFi baru saja tersambung (justConnected), langsung hubungkan TCP tanpa menunggu jeda 5 detik
+            if (justConnected || _lastTcpAttempt == 0 || now - _lastTcpAttempt > 5000) {
                 _lastTcpAttempt = now;
                 _log("[TCP] Connecting to server: ", _host);
                 connect(_host, _port);
@@ -305,6 +312,28 @@ void ElectinsIoT::loop() {
         return;
     }
 
+    // Proteksi Frame Receive Timeout: jika pembacaan frame menggantung > 2 detik, putus koneksi untuk sinkronisasi ulang stream TCP
+    if (_lenBytesRead > 0 && millis() - _frameStartRef > 2000) {
+        _log("[TCP] Frame receive timeout, forcing disconnect");
+        _client.stop();
+        _lenBytesRead = 0;
+        _rxMsgLen = 0;
+        _rxMsgRead = 0;
+        unlock();
+        return;
+    }
+
+    // Proteksi TCP Half-Open Connection Timeout: jika koneksi aktif tapi tidak menerima data > 24s, putus koneksi
+    if (_lastRxTime > 0 && millis() - _lastRxTime > 24000) {
+        _log("[TCP] No data received for 24s (half-open connection), forcing disconnect");
+        _client.stop();
+        _lenBytesRead = 0;
+        _rxMsgLen = 0;
+        _rxMsgRead = 0;
+        unlock();
+        return;
+    }
+
     // Send keepalive ping periodically (default 8s)
     if (millis() - _lastPingTime > _pingIntervalMs) {
         sendPing();
@@ -315,6 +344,9 @@ void ElectinsIoT::loop() {
         if (_lenBytesRead < 4) {
             int b = _client.read();
             if (b < 0) break;
+            if (_lenBytesRead == 0) {
+                _frameStartRef = millis(); // Catat waktu awal pembacaan frame baru
+            }
             _lenBuf[_lenBytesRead++] = (uint8_t)b;
             if (_lenBytesRead == 4) {
                 _rxMsgLen = ((uint32_t)_lenBuf[0] << 24) |
@@ -346,7 +378,11 @@ void ElectinsIoT::loop() {
             continue;
         }
 
+        size_t avail = _client.available();
         size_t toRead = _rxMsgLen - _rxMsgRead;
+        if (toRead > avail) {
+            toRead = avail;
+        }
         if (toRead > 0) {
             int readBytes = _client.read(&_rxBuffer[_rxMsgRead], toRead);
             if (readBytes <= 0) break;
@@ -383,24 +419,16 @@ bool ElectinsIoT::writeFrame(const uint8_t* pbData, size_t pbSize) {
 void ElectinsIoT::handleIncomingFrame(const uint8_t* pbData, size_t pbSize) {
     DecodedCommand cmd;
     if (decodeCommand(pbData, pbSize, cmd)) {
+        _lastRxTime = millis(); // Perbarui waktu terakhir data diterima
         if (cmd.type == 0) { // PING
-            _log("[TCP] Received PING keepalive");
+            // Silent ping
         } 
         else if (cmd.type == 1) { // UPDATE_PARAM
-            _log("[CMD] Received UPDATE_PARAM for: ", cmd.target_param);
+            _log("[CMD] Received UPDATE_PARAM for: ", (String(cmd.target_param) + " = " + String(cmd.value) + " (Text: " + cmd.string_value + ")").c_str());
             updateCacheDouble(cmd.target_param, cmd.value);
             updateCacheString(cmd.target_param, cmd.string_value);
-            
-            // Settling period: Dalam 500ms pertama setelah koneksi TCP terbentuk,
-            // hanya update cache tanpa memicu callback pengguna.
-            // Ini mencegah ledakan perintah lama (stale command burst) dari server
-            // yang menyebabkan relay berkedip cepat setelah OTA/reconnect.
-            bool isSettling = (_connectTime > 0 && millis() - _connectTime < 500);
-            
-            if (_updateParamCb && !isSettling) {
+            if (_updateParamCb) {
                 _updateParamCb(cmd.target_param, cmd.value, cmd.string_value);
-            } else if (isSettling) {
-                _log("[CMD] Settling period active, callback skipped (cache updated)");
             }
         } 
         else if (cmd.type == 2) { // REBOOT
@@ -429,7 +457,6 @@ void ElectinsIoT::sendPing() {
     const char* sKeys[1] = { "fw_version" };
     const char* sVals[1] = { _version };
     _sendTelemetry(nullptr, nullptr, 0, sKeys, sVals, 1);
-    _log("[TCP] Sent keepalive ping with fw_version: ", _version);
 }
 
 bool ElectinsIoT::sendTelemetry(const char* param, double value) {
@@ -772,7 +799,6 @@ void ElectinsIoT::updateCacheString(const char* key, const char* val) {
     }
     unlock();
 }
-
 bool ElectinsIoT::getBool(const char* param, bool defaultValue) {
     if (param == nullptr || param[0] == '\0') return defaultValue;
     lock();

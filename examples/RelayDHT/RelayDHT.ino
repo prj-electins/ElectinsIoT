@@ -1,5 +1,5 @@
 /**
- * RelayDHT.ino — ElectinsIoT v3.0.0 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v3.0.1 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
  * Kontrol relay dan kirim data sensor DHT11/DHT22 secara otomatis latar belakang.
  * Pustaka otomatis mengurus Wi-Fi, TCP, heartbeat ping, & OTA update.
@@ -40,21 +40,20 @@ void setup() {
     // Aktifkan log debug
     iot.setDebug(true);
 
+    // Registrasi callback untuk merespons status parameter dari server secara instan (event-driven)
+    // Ini adalah cara terbaik agar status awal ter-load secara instan saat menyala/reconnect.
+    iot.onUpdateParam([](const char* param, double val, const char* strVal) {
+        if (strcmp(param, PARAM_RELAY) == 0) {
+            digitalWrite(PIN_RELAY, val > 0.5 ? HIGH : LOW);
+        }
+    });
+
     // Mulai inisialisasi otomatis Wi-Fi & TCP Server.
     iot.beginWiFi(API_KEY, WIFI_SSID, WIFI_PASS, FIRMWARE_VER);
 }
 
 void loop() {
-    // 1. KONTROL RELAY (GET) - Polling nilai dari server (default: 0.0/mati)
-    double relayValue = iot.getDouble(PARAM_RELAY, 0.0);
-    bool turnOn = (relayValue > 0.5);
-    if (turnOn) {
-        digitalWrite(PIN_RELAY, HIGH);
-    } else {
-        digitalWrite(PIN_RELAY, LOW);
-    }
-
-    // 2. TELEMETRI SENSOR (SET) - Kirim data suhu & kelembapan setiap 5 detik
+    // TELEMETRI SENSOR (SET) - Kirim data suhu & kelembapan setiap 5 detik
     static unsigned long lastSend = 0;
     if (millis() - lastSend >= 5000) {
         lastSend = millis();
@@ -67,7 +66,7 @@ void loop() {
             iot.startBatch();
             iot.addBatch(PARAM_SUHU, temp);
             iot.addBatch(PARAM_KELEMBAPAN, hum);
-            iot.addBatch(PARAM_RELAY_STATE, turnOn ? 1.0 : 0.0); // Laporkan status relay balik ke server
+            iot.addBatch(PARAM_RELAY_STATE, digitalRead(PIN_RELAY) == HIGH ? 1.0 : 0.0); // Laporkan status relay balik ke server
             iot.sendBatch();
             
             Serial.printf("[Sensor] Suhu: %.1f°C | Kelembapan: %.1f%%\n", temp, hum);

@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-**v3.0.0** — Thread-safe, zero-dependency automatic background TCP & Protobuf library for ESP32 and ESP8266.  
+**v3.0.1** — Thread-safe, zero-dependency automatic background TCP & Protobuf library for ESP32 and ESP8266.  
 One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
 ### How It Works
@@ -164,7 +164,7 @@ void setup() {
 <a name="indonesia"></a>
 ## Indonesia
 
-**v3.0.0** — Library TCP & Protobuf otomatis latar belakang yang thread-safe dan bebas dependensi eksternal untuk ESP32 dan ESP8266.  
+**v3.0.1** — Library TCP & Protobuf otomatis latar belakang yang thread-safe dan bebas dependensi eksternal untuk ESP32 dan ESP8266.  
 Satu panggilan di `setup()`. Tidak ada kode di `loop()`. Tidak memerlukan pustaka eksternal.
 
 ### Cara Kerja
