@@ -711,10 +711,10 @@ void ElectinsIoT::performOtaUpdate(const char* firmwareUrl) {
     }
 #elif defined(ESP8266)
     WiFiClient otaClient;
-    t_httpUpdate_return ret = ESP8266httpUpdate.update(otaClient, firmwareUrl);
+    t_httpUpdate_return ret = ESPhttpUpdate.update(otaClient, firmwareUrl);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
-            _log("[OTA] Update failed, error: ", ESP8266httpUpdate.getLastErrorString().c_str());
+            _log("[OTA] Update failed, error: ", ESPhttpUpdate.getLastErrorString().c_str());
             break;
         case HTTP_UPDATE_NO_UPDATES:
             _log("[OTA] No updates available.");
