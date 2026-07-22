@@ -1,5 +1,5 @@
 /**
- * AdvancedIoT.ino — ElectinsIoT v3.0.2 Advanced Features
+ * AdvancedIoT.ino — ElectinsIoT v3.0.3 Advanced Features
  * ──────────────────────────────────────────────────
  * Mendemonstrasikan kontrol parameter multi-tipe (downlink) asinkron lewat cache (GET),
  * pengiriman data batch hemat kuota (SET), serta pendaftaran callback reboot aman.

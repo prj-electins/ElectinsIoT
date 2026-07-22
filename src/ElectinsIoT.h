@@ -73,6 +73,7 @@ private:
     Client& _client;
     const char* _apiKey = nullptr;
     char _deviceId[64] = {0};
+    bool _isCustomDeviceId = false;
     char _version[16] = {0}; // Menyimpan versi firmware aktif
     const char* _host = "iot.electins.id";
     uint16_t _port = 1883;
@@ -148,4 +149,5 @@ private:
                         const char* const* stringKeys, const char* const* stringVals, size_t stringCount);
     
     void _log(const char* msg, const char* val = nullptr);
+    void ensureDeviceId();
 };

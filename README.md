@@ -7,7 +7,7 @@
 <a name="english"></a>
 ## English
 
-**v3.0.2** — Thread-safe, zero-dependency automatic background TCP & Protobuf library for ESP32 and ESP8266.  
+**v3.0.3** — Thread-safe, zero-dependency automatic background TCP & Protobuf library for ESP32 and ESP8266.  
 One call in `setup()`. Nothing in `loop()`. No external libraries required.
 
 ### How It Works
@@ -96,6 +96,23 @@ void loop() {
 
 ---
 
+### Included Examples
+
+The library comes with rich example sketches located in `examples/`:
+
+- **`BasicIoT`** — Getting started with telemetries and callbacks.
+- **`RelayDHT`** — Instant relay control and DHT temperature & humidity telemetry.
+- **`SwitchesAndButtons`** — Switches, Momentary Buttons, Push Buttons, and LED Indicators.
+- **`SlidersAndSteppers`** — Linear Sliders, Arc Sliders, Horizontal Steppers, and Vertical Steppers.
+- **`DisplaysAndSensors`** — Value Displays, Gauge Meters, Line Charts, Status Labels, and Level Bars.
+- **`AdvancedControls`** — Color Picker (RGB), GPS Map, Text Inputs, and Time Pickers.
+- **`FullAutomationMaster`** — Voice Control commands and Radial Progress Charts.
+- **`JsonIoT`** — Sending and parsing JSON payloads.
+- **`SecureIoT`** — Encrypted TLS/SSL connections on port 8883.
+- **`AdvancedIoT`** — Batching and advanced memory management.
+
+---
+
 ### API Reference
 
 #### Initialization & Reconnections
@@ -164,7 +181,7 @@ void setup() {
 <a name="indonesia"></a>
 ## Indonesia
 
-**v3.0.2** — Library TCP & Protobuf otomatis latar belakang yang thread-safe dan bebas dependensi eksternal untuk ESP32 dan ESP8266.  
+**v3.0.3** — Library TCP & Protobuf otomatis latar belakang yang thread-safe dan bebas dependensi eksternal untuk ESP32 dan ESP8266.  
 Satu panggilan di `setup()`. Tidak ada kode di `loop()`. Tidak memerlukan pustaka eksternal.
 
 ### Cara Kerja
@@ -250,6 +267,23 @@ void loop() {
     }
 }
 ```
+
+---
+
+### Contoh Sketsa (Examples)
+
+Pustaka ini dilengkapi dengan contoh sketsa siap pakai yang ada di direktori `examples/`:
+
+- **`BasicIoT`** — Penggunaan dasar telemetri dan callback.
+- **`RelayDHT`** — Kontrol relay instan dan telemetri suhu & kelembapan sensor DHT.
+- **`SwitchesAndButtons`** — Saklar (Switch), Tombol Momentary, Push Button, dan Indikator LED.
+- **`SlidersAndSteppers`** — Pengatur Slider Linear, Arc Slider, Stepper Horizontal, dan Stepper Vertikal.
+- **`DisplaysAndSensors`** — Value Display, Meteran Gauge, Grafik Line Chart, Label Status, dan Bar Level.
+- **`AdvancedControls`** — Pemilih Warna RGB (Color Picker), Peta GPS, Input Teks, dan Pemilih Waktu (Time Picker).
+- **`FullAutomationMaster`** — Kontrol Perintah Suara (Voice Control) dan Grafik Radial Progress.
+- **`JsonIoT`** — Pengiriman dan parsing data terformat JSON.
+- **`SecureIoT`** — Koneksi terenkripsi aman (SSL/TLS) pada port 8883.
+- **`AdvancedIoT`** — Fitur batching dan pengelolaan memori tingkat lanjut.
 
 ---
 

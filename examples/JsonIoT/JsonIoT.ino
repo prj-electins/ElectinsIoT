@@ -1,5 +1,5 @@
 /**
- * JsonIoT.ino — ElectinsIoT v3.0.2 JSON Serialization Example
+ * JsonIoT.ino — ElectinsIoT v3.0.3 JSON Serialization Example
  * ──────────────────────────────────────────────────────────
  * Demonstrasi pengiriman data terformat JSON dan pemrosesan 
  * konfigurasi JSON yang diterima dari server menggunakan ArduinoJson.

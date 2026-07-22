@@ -152,6 +152,20 @@ void ElectinsIoT::unlock() {
 #endif
 }
 
+void ElectinsIoT::ensureDeviceId() {
+    if (_isCustomDeviceId) return;
+    if (_deviceId[0] == '\0' || strcmp(_deviceId, "00:00:00:00:00:00") == 0) {
+        WiFi.mode(WIFI_STA);
+        uint8_t mac[6] = {0};
+        WiFi.macAddress(mac);
+        if (mac[0] != 0 || mac[1] != 0 || mac[2] != 0 || mac[3] != 0 || mac[4] != 0 || mac[5] != 0) {
+            snprintf(_deviceId, sizeof(_deviceId), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            _log("[WiFi] Generated device MAC address: ", _deviceId);
+        }
+    }
+}
+
 void ElectinsIoT::begin(const char* apiKey, const char* version, const char* deviceId) {
     lock();
     _apiKey = apiKey;
@@ -163,14 +177,14 @@ void ElectinsIoT::begin(const char* apiKey, const char* version, const char* dev
         strcpy(_version, "1.0.0");
     }
     
-    if (!deviceId || deviceId[0] == '\0') {
-        uint8_t mac[6];
-        WiFi.macAddress(mac);
-        snprintf(_deviceId, sizeof(_deviceId), "%02X:%02X:%02X:%02X:%02X:%02X",
-                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    } else {
+    if (deviceId && deviceId[0] != '\0') {
+        _isCustomDeviceId = true;
         strncpy(_deviceId, deviceId, sizeof(_deviceId) - 1);
         _deviceId[sizeof(_deviceId) - 1] = '\0';
+    } else {
+        _isCustomDeviceId = false;
+        _deviceId[0] = '\0';
+        ensureDeviceId();
     }
     _appValidated = false;
     unlock();
@@ -180,6 +194,8 @@ void ElectinsIoT::beginWiFi(const char* apiKey, const char* ssid, const char* pa
                            const char* version, bool useSsl, const char* deviceId) {
     _ssid = ssid;
     _pass = pass;
+    
+    WiFi.mode(WIFI_STA); // Inisialisasi mode Station Wi-Fi lebih awal
     
     // Atur port default jika masih mengarah ke server produksi awan
     if (strcmp(_host, "iot.electins.id") == 0) {
@@ -208,6 +224,7 @@ void ElectinsIoT::setLocalServer(const char* host, uint16_t port) {
 
 bool ElectinsIoT::connect(const char* host, uint16_t port) {
     lock();
+    ensureDeviceId();
     if (host != nullptr && host[0] != '\0') {
         _host = host;
     }
@@ -291,6 +308,7 @@ void ElectinsIoT::loop() {
         
         // WiFi sudah terhubung, cek koneksi TCP
         lock();
+        ensureDeviceId();
         bool isTcpConnected = _client.connected();
         unlock();
         
@@ -546,6 +564,8 @@ bool ElectinsIoT::_sendTelemetry(const char* const* doubleKeys, const double* do
     if (_otaInProgress) return false;
     if (!_client.connected()) return false;
     
+    ensureDeviceId();
+
     size_t offset = 0;
 
     // api_key (field 1)

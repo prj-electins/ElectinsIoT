@@ -1,5 +1,5 @@
 /**
- * SecureIoT.ino — ElectinsIoT v3.0.2
+ * SecureIoT.ino — ElectinsIoT v3.0.3
  * ──────────────────────────────────────────────────────────
  * Contoh dasar penggunaan koneksi aman terenkripsi (SSL/TLS)
  * untuk mengontrol lampu dan mengirim data tekanan.
@@ -38,7 +38,7 @@ ElectinsIoT iot(secureClient);
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("\n[ElectinsIoT] SecureIoT v3.0.2 (TLS)");
+    Serial.println("\n[ElectinsIoT] SecureIoT v3.0.3 (TLS)");
 
     // ── Konfigurasi TLS Aman pada Klien Soket ────────────────────────────────
 #if defined(ESP32)

@@ -1,5 +1,5 @@
 /**
- * RelayDHT.ino — ElectinsIoT v3.0.2 Relay + DHT Sensor
+ * RelayDHT.ino — ElectinsIoT v3.0.3 Relay + DHT Sensor
  * ──────────────────────────────────────────────────
  * Kontrol relay dan kirim data sensor DHT11/DHT22 secara otomatis latar belakang.
  * Pustaka otomatis mengurus Wi-Fi, TCP, heartbeat ping, & OTA update.
