@@ -1,5 +1,5 @@
 /**
- * BasicIoT.ino — ElectinsIoT v3.0.3
+ * BasicIoT.ino — ElectinsIoT v3.0.4
  * ─────────────────────────────────────────────
  * Contoh dasar penggunaan pustaka ElectinsIoT
  * untuk mengontrol lampu dan mengirim data suhu.

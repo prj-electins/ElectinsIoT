@@ -1,5 +1,5 @@
 /**
- * SwitchesAndButtons.ino — ElectinsIoT v3.0.3 Example
+ * SwitchesAndButtons.ino — ElectinsIoT v3.0.4 Example
  * ─────────────────────────────────────────────────────────────────────────────
  * Contoh penggunaan widget saklar dan tombol kontrol:
  * - Switch        : Mengontrol status On/Off saklar atau relay

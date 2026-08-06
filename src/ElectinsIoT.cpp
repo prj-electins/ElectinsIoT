@@ -15,6 +15,7 @@
   #include <ESP8266HTTPClient.h>
   #include <ESP8266httpUpdate.h>
   #include <Ticker.h>
+  #include <Schedule.h>
 #endif
 
 // Protobuf wire helper functions
@@ -110,8 +111,18 @@ static void electinsTask(void* pvParameters) {
 
 #if defined(ESP8266)
 static Ticker otaLoopTicker;
+static volatile bool loopScheduled = false;
 static void onTickerLoop(ElectinsIoT* iot) {
-    iot->loop();
+    if (!loopScheduled) {
+        loopScheduled = true;
+        bool enqueued = schedule_function([iot]() {
+            loopScheduled = false;
+            iot->loop();
+        });
+        if (!enqueued) {
+            loopScheduled = false;
+        }
+    }
 }
 #endif
 
@@ -442,7 +453,8 @@ void ElectinsIoT::handleIncomingFrame(const uint8_t* pbData, size_t pbSize) {
             // Silent ping
         } 
         else if (cmd.type == 1) { // UPDATE_PARAM
-            _log("[CMD] Received UPDATE_PARAM for: ", (String(cmd.target_param) + " = " + String(cmd.value) + " (Text: " + cmd.string_value + ")").c_str());
+            String valStr = (cmd.string_value[0] != '\0') ? String(cmd.string_value) : String(cmd.value, 2);
+            _log("[CMD] Received UPDATE_PARAM for: ", (String(cmd.target_param) + " = " + valStr).c_str());
             updateCacheDouble(cmd.target_param, cmd.value);
             updateCacheString(cmd.target_param, cmd.string_value);
             if (_updateParamCb) {
@@ -483,7 +495,10 @@ bool ElectinsIoT::sendTelemetry(const char* param, double value) {
     const char* dKeys[1] = { param };
     double dVals[1] = { value };
     bool ok = _sendTelemetry(dKeys, dVals, 1, nullptr, nullptr, 0);
-    if (ok) _log("[Telemetry] Sent parameter: ", param);
+    if (ok) {
+        String logMsg = String(param) + " = " + String(value, 2);
+        _log("[Telemetry] Sent parameter: ", logMsg.c_str());
+    }
     unlock();
     return ok;
 }
@@ -494,7 +509,10 @@ bool ElectinsIoT::sendTelemetryString(const char* param, const char* value) {
     const char* sKeys[1] = { param };
     const char* sVals[1] = { value };
     bool ok = _sendTelemetry(nullptr, nullptr, 0, sKeys, sVals, 1);
-    if (ok) _log("[Telemetry] Sent string parameter: ", param);
+    if (ok) {
+        String logMsg = String(param) + " = " + String(value);
+        _log("[Telemetry] Sent parameter: ", logMsg.c_str());
+    }
     unlock();
     return ok;
 }

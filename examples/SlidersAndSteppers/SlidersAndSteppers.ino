@@ -1,5 +1,5 @@
 /**
- * SlidersAndSteppers.ino — ElectinsIoT v3.0.3 Example
+ * SlidersAndSteppers.ino — ElectinsIoT v3.0.4 Example
  * ─────────────────────────────────────────────────────────────────────────────
  * Contoh penggunaan widget pengatur nilai bertahap:
  * - Slider (Linear) — Mengatur nilai bertahap atau kecerahan (0 - 255)
