@@ -1,5 +1,5 @@
 /**
- * FullAutomationMaster.ino — ElectinsIoT v3.0.4 Example
+ * FullAutomationMaster.ino — ElectinsIoT v3.0.5 Example
  * ─────────────────────────────────────────────────────────────────────────────
  * Contoh integrasi sistem dan kontrol perintah suara:
  * - Radial Progress : Menampilkan indikator persentase beban atau status

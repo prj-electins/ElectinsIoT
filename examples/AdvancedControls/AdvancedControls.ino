@@ -1,5 +1,5 @@
 /**
- * AdvancedControls.ino — ElectinsIoT v3.0.4 Example
+ * AdvancedControls.ino — ElectinsIoT v3.0.5 Example
  * ─────────────────────────────────────────────────────────────────────────────
  * Contoh penggunaan widget interaktif tambahan:
  * - Color Picker — Memilih warna lampu RGB

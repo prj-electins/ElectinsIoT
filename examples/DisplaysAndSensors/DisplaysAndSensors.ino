@@ -1,5 +1,5 @@
 /**
- * DisplaysAndSensors.ino — ElectinsIoT v3.0.4 Example
+ * DisplaysAndSensors.ino — ElectinsIoT v3.0.5 Example
  * ─────────────────────────────────────────────────────────────────────────────
  * Contoh penggunaan widget untuk pemantauan data sensor:
  * - Value Display  : Menampilkan angka sensor
