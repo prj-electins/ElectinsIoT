@@ -253,6 +253,7 @@ bool ElectinsIoT::connect(const char* host, uint16_t port) {
     
     lock();
     if (success) {
+        _client.setNoDelay(true); // Disable Nagle algorithm for instant telemetry delivery
         _lenBytesRead = 0;
         _rxMsgLen = 0;
         _rxMsgRead = 0;
@@ -352,9 +353,9 @@ void ElectinsIoT::loop() {
         return;
     }
 
-    // Proteksi TCP Half-Open Connection Timeout: jika koneksi aktif tapi tidak menerima data > 24s, putus koneksi
-    if (_lastRxTime > 0 && millis() - _lastRxTime > 24000) {
-        _log("[TCP] No data received for 24s (half-open connection), forcing disconnect");
+    // Proteksi TCP Half-Open Connection Timeout: jika koneksi aktif tapi tidak menerima data > 45s, putus koneksi
+    if (_lastRxTime > 0 && millis() - _lastRxTime > 45000) {
+        _log("[TCP] No data received for 45s (half-open connection), forcing disconnect");
         _client.stop();
         _lenBytesRead = 0;
         _rxMsgLen = 0;
