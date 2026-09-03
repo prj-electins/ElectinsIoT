@@ -253,7 +253,6 @@ bool ElectinsIoT::connect(const char* host, uint16_t port) {
     
     lock();
     if (success) {
-        _client.setNoDelay(true); // Disable Nagle algorithm for instant telemetry delivery
         _lenBytesRead = 0;
         _rxMsgLen = 0;
         _rxMsgRead = 0;
